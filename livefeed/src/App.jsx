@@ -586,7 +586,7 @@ export default function App() {
             type="text"
             value={keyInput}
             onChange={e => setKeyInput(e.target.value)}
-            placeholder="install_uid or professor"
+            placeholder="enter key"
             className="w-full px-4 py-2 mb-4 rounded bg-gray-700 text-white focus:outline-none"
           />
           <button
