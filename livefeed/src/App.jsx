@@ -307,8 +307,19 @@ export default function App() {
         const url = `${BASE_URL}/recent_background_api_data/${accessKey}`;
         const res = await fetch(url);
         if (!res.ok) throw new Error('Network response was not ok');
-        const data = await res.json();
-        setDevicesMap(data || {});
+        const json = await res.json();
+
+        let mapData;
+        if (accessKey === 'professor') {
+          // professor already gets a map of { [uid]: { data, received_at } }
+          mapData = json;
+        } else {
+          // single‑device response comes back as { data, received_at }
+          // wrap it under its install_uid key
+          mapData = { [accessKey]: json };
+        }
+
+        setDevicesMap(mapData);
         setConnectionStatus('connected');
         setLastUpdate(new Date());
       } catch (err) {
@@ -326,15 +337,16 @@ export default function App() {
   }, [accessKey]);
 
   // Flatten map → array of device entries
-  const allDevices = Object.values(devicesMap).map(e => ({
-    ...e.data,
-    received_at: e.received_at,
+  const allDevices = Object.entries(devicesMap).map(([uid, entry]) => ({
+    install_uid: uid,
+    ...entry.data,
+    received_at: entry.received_at,
   }));
 
-  // Show all if "professor", else only matching install_uid
+  // Show all if "professor", else only the one we fetched
   const visibleDevices = accessKey === 'professor'
     ? allDevices
-    : allDevices.filter(d => d.install_uid === accessKey);
+    : allDevices; // already only one
 
   const getActiveDevices = () =>
     visibleDevices.filter(d =>
@@ -386,7 +398,7 @@ export default function App() {
     );
   }
 
-  // 3) No devices found
+  // 3) No devices found (only possible if server returned 404 or empty)
   if (visibleDevices.length === 0 && accessKey !== 'professor') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white">
