@@ -74,22 +74,23 @@
 
 // app.listen(PORT, () => console.log(`🚀 Server on http://localhost:${PORT}`));
 
-// server.js
-const express = require('express');
-const fs = require('fs');
-const path = require('path');
-const cors = require('cors');
+const express    = require('express');
+const fs         = require('fs');
+const path       = require('path');
+const cors       = require('cors');
 const bodyParser = require('body-parser');
 
-const app = express();
+const app  = express();
 const PORT = 5000;
 
 app.use(cors());
 app.use(bodyParser.json({ limit: '50mb' }));
 
-// Storage
+// Storage paths
 const FULL_LOG   = path.join(__dirname, 'background_api_store.jsonl');
 const RECENT_LOG = path.join(__dirname, 'recent_background_store.jsonl');
+
+// Initialize logs
 if (!fs.existsSync(FULL_LOG)) fs.writeFileSync(FULL_LOG, '');
 let recentData = {};
 if (fs.existsSync(RECENT_LOG)) {
@@ -97,10 +98,10 @@ if (fs.existsSync(RECENT_LOG)) {
   catch { recentData = {}; }
 }
 
-// In‐memory capture flags
+// In‑memory control flags
 const captureEnabled = {};
 
-// Periodically flush recentData to disk
+// Flush recentData every 5 s
 setInterval(() => {
   fs.writeFileSync(RECENT_LOG, JSON.stringify(recentData, null, 2));
 }, 5000);
@@ -109,7 +110,7 @@ function appendFullLog(entry) {
   fs.appendFile(FULL_LOG, JSON.stringify(entry) + '\n', err => err && console.error(err));
 }
 
-// Screenshot + status POST
+// 1) Screenshot + status POST
 app.post('/background_api/:device', (req, res) => {
   const device = req.params.device;
   const payload = req.body;
@@ -118,7 +119,7 @@ app.post('/background_api/:device', (req, res) => {
 
   appendFullLog(entry);
 
-  // carry forward last screenshot if none provided
+  // if no screenshot, carry last one
   if (!payload.screenshot_png_b64 && recentData[device]?.data?.screenshot_png_b64) {
     payload.screenshot_png_b64 = recentData[device].data.screenshot_png_b64;
   }
@@ -127,7 +128,7 @@ app.post('/background_api/:device', (req, res) => {
   res.status(201).json({ status: 'saved', device, received_at });
 });
 
-// Fetch most recent data
+// 2) Fetch most recent data
 app.get('/recent_background_api_data/:device', (req, res) => {
   const device = req.params.device;
   if (device === 'professor') return res.json(recentData);
@@ -137,16 +138,16 @@ app.get('/recent_background_api_data/:device', (req, res) => {
     : res.status(404).json({ error: 'Not found' });
 });
 
-// —— NEW CONTROL ENDPOINTS ——
-// Set capture_enabled flag
+// —— CONTROL ENDPOINTS ——
+
+// Set capture_enabled
 app.post('/control/:device', (req, res) => {
   const device = req.params.device;
-  const { capture_enabled } = req.body;
-  captureEnabled[device] = Boolean(capture_enabled);
+  captureEnabled[device] = Boolean(req.body.capture_enabled);
   res.json({ device, capture_enabled: captureEnabled[device] });
 });
 
-// Get capture_enabled flag (default to true if never set)
+// Get capture_enabled (default true)
 app.get('/control/:device', (req, res) => {
   const device = req.params.device;
   const enabled = captureEnabled.hasOwnProperty(device)
@@ -154,7 +155,6 @@ app.get('/control/:device', (req, res) => {
     : true;
   res.json({ device, capture_enabled: enabled });
 });
-
 
 // Graceful shutdown
 function flushAndExit() {
