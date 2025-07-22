@@ -145,11 +145,16 @@ app.post('/control/:device', (req, res) => {
   captureEnabled[device] = Boolean(capture_enabled);
   res.json({ device, capture_enabled: captureEnabled[device] });
 });
-// Get capture_enabled flag
+
+// Get capture_enabled flag (default to true if never set)
 app.get('/control/:device', (req, res) => {
   const device = req.params.device;
-  res.json({ device, capture_enabled: Boolean(captureEnabled[device]) });
+  const enabled = captureEnabled.hasOwnProperty(device)
+    ? captureEnabled[device]
+    : true;
+  res.json({ device, capture_enabled: enabled });
 });
+
 
 // Graceful shutdown
 function flushAndExit() {
