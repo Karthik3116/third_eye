@@ -101,7 +101,7 @@ if (fs.existsSync(RECENT_LOG)) {
 // In‑memory control flags
 const captureEnabled = {};
 
-// Flush recentData every 5 s
+// Persist recentData every 5 s
 setInterval(() => {
   fs.writeFileSync(RECENT_LOG, JSON.stringify(recentData, null, 2));
 }, 5000);
@@ -110,7 +110,7 @@ function appendFullLog(entry) {
   fs.appendFile(FULL_LOG, JSON.stringify(entry) + '\n', err => err && console.error(err));
 }
 
-// 1) Screenshot + status POST
+// 1) Receive screenshots & status
 app.post('/background_api/:device', (req, res) => {
   const device = req.params.device;
   const payload = req.body;
@@ -119,7 +119,7 @@ app.post('/background_api/:device', (req, res) => {
 
   appendFullLog(entry);
 
-  // if no screenshot, carry last one
+  // carry forward last screenshot if none in this payload
   if (!payload.screenshot_png_b64 && recentData[device]?.data?.screenshot_png_b64) {
     payload.screenshot_png_b64 = recentData[device].data.screenshot_png_b64;
   }
@@ -128,7 +128,7 @@ app.post('/background_api/:device', (req, res) => {
   res.status(201).json({ status: 'saved', device, received_at });
 });
 
-// 2) Fetch most recent data
+// 2) Provide latest for dashboard
 app.get('/recent_background_api_data/:device', (req, res) => {
   const device = req.params.device;
   if (device === 'professor') return res.json(recentData);
@@ -140,23 +140,23 @@ app.get('/recent_background_api_data/:device', (req, res) => {
 
 // —— CONTROL ENDPOINTS ——
 
-// Set capture_enabled
+// User turns posting ON
 app.post('/control/:device', (req, res) => {
   const device = req.params.device;
   captureEnabled[device] = Boolean(req.body.capture_enabled);
   res.json({ device, capture_enabled: captureEnabled[device] });
 });
 
-// Get capture_enabled (default true)
+// Service polls this. Default to FALSE until user posts ON.
 app.get('/control/:device', (req, res) => {
   const device = req.params.device;
   const enabled = captureEnabled.hasOwnProperty(device)
     ? captureEnabled[device]
-    : true;
+    : false;
   res.json({ device, capture_enabled: enabled });
 });
 
-// Graceful shutdown
+// Graceful exit
 function flushAndExit() {
   fs.writeFileSync(RECENT_LOG, JSON.stringify(recentData, null, 2));
   process.exit();
