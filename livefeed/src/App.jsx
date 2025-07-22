@@ -284,6 +284,8 @@
 // }
 
 // src/App.jsx
+
+// src/App.jsx
 import { useEffect, useState } from 'react';
 import { Smartphone, Wifi, WifiOff, Clock, Eye, Monitor } from 'lucide-react';
 import './App.css';
@@ -311,12 +313,14 @@ export default function App() {
 
         let mapData;
         if (accessKey === 'professor') {
-          // professor already gets a map of { [uid]: { data, received_at } }
+          // 1) Admin view: json is already a map of uid → { data, received_at }
           mapData = json;
-        } else {
-          // single‑device response comes back as { data, received_at }
-          // wrap it under its install_uid key
+        } else if (json.data !== undefined && json.received_at !== undefined) {
+          // 2) Modern single-device: wrap under its UID
           mapData = { [accessKey]: json };
+        } else {
+          // 3) Fallback: assume it's already a map
+          mapData = json;
         }
 
         setDevicesMap(mapData);
@@ -336,17 +340,14 @@ export default function App() {
     return () => clearInterval(interval);
   }, [accessKey]);
 
-  // Flatten map → array of device entries
+  // Build an array of { install_uid, ...data, received_at }
   const allDevices = Object.entries(devicesMap).map(([uid, entry]) => ({
     install_uid: uid,
     ...entry.data,
     received_at: entry.received_at,
   }));
 
-  // Show all if "professor", else only the one we fetched
-  const visibleDevices = accessKey === 'professor'
-    ? allDevices
-    : allDevices; // already only one
+  const visibleDevices = allDevices; // for professor or single-device alike
 
   const getActiveDevices = () =>
     visibleDevices.filter(d =>
@@ -362,7 +363,7 @@ export default function App() {
     setAccessKey(keyInput.trim());
   };
 
-  // 1) Login form
+  // --- LOGIN FORM ---
   if (!accessKey) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-900">
@@ -386,7 +387,7 @@ export default function App() {
     );
   }
 
-  // 2) Loading spinner
+  // --- LOADING STATE ---
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-900">
@@ -398,7 +399,7 @@ export default function App() {
     );
   }
 
-  // 3) No devices found (only possible if server returned 404 or empty)
+  // --- NO DEVICES FOUND ---
   if (visibleDevices.length === 0 && accessKey !== 'professor') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white">
@@ -407,7 +408,7 @@ export default function App() {
     );
   }
 
-  // 4) Dashboard
+  // --- DASHBOARD ---
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
       {/* HEADER */}
@@ -476,7 +477,7 @@ export default function App() {
               key={d.install_uid}
               className="group bg-black/40 backdrop-blur-sm rounded-3xl border border-white/10 hover:border-purple-500/50 transition-transform transform hover:scale-105"
             >
-              {/* Card header */}
+              {/* Card Header */}
               <div className="relative p-4 bg-gradient-to-r from-purple-500/20 to-blue-500/20 border-b border-white/10">
                 <div
                   className={`absolute top-2 right-2 w-3 h-3 rounded-full ${
@@ -488,9 +489,7 @@ export default function App() {
                     <Smartphone className="w-5 h-5 text-purple-400" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-white font-bold truncate">
-                      {d.device_name}
-                    </h3>
+                    <h3 className="text-white font-bold truncate">{d.device_name}</h3>
                     <div className="flex items-center gap-1 text-xs text-gray-300">
                       <Eye className="w-3 h-3" />
                       <span>Live Feed</span>
@@ -511,7 +510,7 @@ export default function App() {
               <div className="aspect-[9/16] bg-gray-900">
                 {d.screenshot_png_b64 ? (
                   <img
-                    src={`data:image/png;base64,${d.screenshot_png_b64}`}
+                    src={`data:image/webp;base64,${d.screenshot_png_b64}`}
                     alt={`${d.device_name} screenshot`}
                     className="w-full h-full object-contain"
                     loading="lazy"
@@ -524,7 +523,7 @@ export default function App() {
                 )}
               </div>
 
-              {/* Footer */}
+              {/* Card Footer */}
               <div className="p-3 bg-black/30 backdrop-blur-sm">
                 <div className="flex items-center justify-between text-xs">
                   <span
@@ -551,7 +550,7 @@ export default function App() {
         })}
       </div>
 
-      {/* Dashboard Footer */}
+      {/* FOOTER */}
       <footer className="mt-12 text-center">
         <div className="inline-flex items-center gap-6 px-6 py-3 bg-black/20 backdrop-blur-sm rounded-2xl border border-white/10">
           <div className="text-sm text-white">
