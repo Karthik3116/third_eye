@@ -149,6 +149,7 @@
 
 
 // server.js
+// server.js
 const express    = require('express');
 const fs         = require('fs');
 const path       = require('path');
@@ -162,32 +163,34 @@ const PORT = 5000;
 app.use(cors());
 app.use(bodyParser.json({ limit: '100mb' }));  // accommodate frequent large payloads
 
-// --- Log file paths ---
-const FULL_LOG   = path.join(__dirname, 'background_api_store.jsonl');
-const RECENT_LOG = path.join(__dirname, 'recent_background_store.jsonl');
+// --- Configuration ---
+const FULL_LOG       = path.join(__dirname, 'background_api_store.jsonl');
+const RECENT_LOG     = path.join(__dirname, 'recent_background_store.jsonl');
+const MAX_RECENT_ENTRIES = 100;    // max per‐device queue length
+const RECENT_FLUSH_MS    = 5000;   // how often to persist recent queues
 
-// --- Prepare full‑log write stream ---
+// --- Prepare full‐log write stream ---
 if (!fs.existsSync(FULL_LOG)) {
   fs.writeFileSync(FULL_LOG, '');
 }
 const fullLogStream = fs.createWriteStream(FULL_LOG, { flags: 'a' });
 
-// --- Load or initialize recentData ---
-let recentData = {};
+// --- In‐memory recent queues: device → array of { data, receivedAt } ---
+let recentQueues = {};
 try {
   if (fs.existsSync(RECENT_LOG)) {
-    recentData = JSON.parse(fs.readFileSync(RECENT_LOG, 'utf-8'));
+    recentQueues = JSON.parse(fs.readFileSync(RECENT_LOG, 'utf-8'));
   }
 } catch {
-  recentData = {};
+  recentQueues = {};
 }
 
-// Flush recentData to disk every 5 seconds (non‑blocking)
+// --- Periodically persist recentQueues (non‐blocking) ---
 setInterval(() => {
-  fs.writeFile(RECENT_LOG, JSON.stringify(recentData, null, 2), () => {});
-}, 5000);
+  fs.writeFile(RECENT_LOG, JSON.stringify(recentQueues, null, 2), () => {});
+}, RECENT_FLUSH_MS);
 
-// --- In‑memory control flags ---
+// --- In‐memory control flags ---
 const captureEnabled = {};
 
 // --- Routes ---
@@ -201,27 +204,38 @@ app.post('/background_api/:device', (req, res) => {
   // Append to full log via write stream
   fullLogStream.write(JSON.stringify({ device, data: payload, receivedAt }) + '\n');
 
-  // Update recentData in memory (carry forward last screenshot if missing)
-  if (!payload.screenshot_png_b64 && recentData[device]?.data?.screenshot_png_b64) {
-    payload.screenshot_png_b64 = recentData[device].data.screenshot_png_b64;
+  // Initialize queue for this device if needed
+  if (!Array.isArray(recentQueues[device])) {
+    recentQueues[device] = [];
   }
-  recentData[device] = { data: payload, receivedAt };
+  const queue = recentQueues[device];
+
+  // Carry forward last screenshot if missing
+  if (!payload.screenshot_png_b64 && queue.length > 0) {
+    payload.screenshot_png_b64 = queue[queue.length - 1].data.screenshot_png_b64;
+  }
+
+  // Push new entry and trim to MAX_RECENT_ENTRIES
+  queue.push({ data: payload, receivedAt });
+  if (queue.length > MAX_RECENT_ENTRIES) {
+    queue.shift();
+  }
 
   res.status(201).json({ status: 'saved', device, receivedAt });
 });
 
-// 2) Fetch most recent data for one device (or all if 'professor')
+// 2) Fetch recent queue for one device (or all if 'professor')
 app.get('/recent_background_api_data/:device', (req, res) => {
   const device = req.params.device;
   if (device === 'professor') {
-    return res.json(recentData);
+    // Return all queues
+    return res.json(recentQueues);
   }
-  const entry = recentData[device];
-  if (!entry) {
+  const queue = recentQueues[device];
+  if (!Array.isArray(queue)) {
     return res.status(404).json({ error: 'Not found' });
   }
-  // wrap in object for consistency
-  res.json({ [device]: entry });
+  res.json({ [device]: queue });
 });
 
 // 3) Set capture_enabled flag
@@ -237,9 +251,9 @@ app.get('/control/:device', (req, res) => {
   res.json({ device, capture_enabled: !!captureEnabled[device] });
 });
 
-// --- Graceful shutdown: flush recentData ---
+// --- Graceful shutdown: flush recentQueues and close stream ---
 function flushAndExit() {
-  fs.writeFileSync(RECENT_LOG, JSON.stringify(recentData, null, 2));
+  fs.writeFileSync(RECENT_LOG, JSON.stringify(recentQueues, null, 2));
   fullLogStream.end();
   process.exit();
 }
