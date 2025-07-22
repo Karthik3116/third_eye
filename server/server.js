@@ -1,3 +1,5 @@
+
+
 // const express = require('express');
 // const fs = require('fs');
 // const path = require('path');
@@ -7,122 +9,156 @@
 // const app = express();
 // const PORT = 5000;
 
-// app.use(cors()); // ✅ CORS enabled globally
+// app.use(cors());
 // app.use(bodyParser.json({ limit: '50mb' }));
 
-// // --- Storage Files ---
-// const BACKGROUND_STORE = path.join(__dirname, 'background_api_store.json');
-// const RECENT_STORE = path.join(__dirname, 'recent_background_store.json');
+// // --- Storage Paths ---
+// const FULL_LOG   = path.join(__dirname, 'background_api_store.jsonl');
+// const RECENT_LOG = path.join(__dirname, 'recent_background_store.json');
 
-// // --- Initialize files if not present ---
-// if (!fs.existsSync(BACKGROUND_STORE)) fs.writeFileSync(BACKGROUND_STORE, '[]');
-// if (!fs.existsSync(RECENT_STORE)) fs.writeFileSync(RECENT_STORE, '{}');
+// // Ensure full-log exists
+// if (!fs.existsSync(FULL_LOG)) fs.writeFileSync(FULL_LOG, '');
 
-// // --- Helpers ---
-// const readJson = (file) => JSON.parse(fs.readFileSync(file, 'utf-8'));
-// const writeJson = (file, data) =>
-//   fs.writeFileSync(file, JSON.stringify(data, null, 2));
+// // Load or initialize recentData
+// let recentData = {};
+// if (fs.existsSync(RECENT_LOG)) {
+//   try {
+//     recentData = JSON.parse(fs.readFileSync(RECENT_LOG, 'utf-8'));
+//   } catch { recentData = {}; }
+// }
 
-// // --- POST /background_api ---
+// // Helper: append a line to .jsonl
+// function appendFullLog(entry) {
+//   fs.appendFile(FULL_LOG, JSON.stringify(entry) + '\n', err => {
+//     if (err) console.error('FullLog write error:', err);
+//   });
+// }
+
+// // Periodically flush recentData to disk
+// setInterval(() => {
+//   fs.writeFile(RECENT_LOG, JSON.stringify(recentData, null, 2), err => {
+//     if (err) console.error('RecentLog write error:', err);
+//   });
+// }, 5000);
+
+// // POST endpoint
 // app.post('/background_api', (req, res) => {
 //   const payload = req.body;
-//   const device_name = payload.device_name || payload.data?.device_name;
-
-//   if (!device_name) {
-//     return res.status(400).json({ error: 'Missing device_name' });
+//   const device = payload.install_uid || payload.device_name;
+//   if (!device) {
+//     return res.status(400).json({ error: 'Missing device identifier' });
 //   }
 
 //   const received_at = new Date().toISOString();
-
-//   // Save to full background log
-//   const fullData = readJson(BACKGROUND_STORE);
 //   const entry = { data: payload, received_at };
-//   fullData.push(entry);
-//   writeJson(BACKGROUND_STORE, fullData);
 
-//   // Save to recent store (handle screenshot logic)
-//   const recentData = readJson(RECENT_STORE);
-//   const newSS = payload?.screenshot_png_b64 || payload?.data?.screenshot_png_b64;
+//   // 1) Append to full log
+//   appendFullLog(entry);
 
-//   if (!recentData[device_name]) {
-//     recentData[device_name] = { data: payload, received_at };
-//   } else {
-//     const prevSS = recentData[device_name]?.data?.screenshot_png_b64;
-//     // Keep previous screenshot if new one is empty
-//     if (newSS === "") {
-//       payload.screenshot_png_b64 = prevSS;
-//     }
-//     recentData[device_name] = { data: payload, received_at };
+//   // 2) Update in-memory recentData
+//   const prev = recentData[device]?.data?.screenshot_png_b64;
+//   if (!payload.screenshot_png_b64 && prev) {
+//     payload.screenshot_png_b64 = prev;
 //   }
+//   recentData[device] = { data: payload, received_at };
 
-//   writeJson(RECENT_STORE, recentData);
-
-//   res.status(201).json({ status: 'saved', entry });
+//   res.status(201).json({ status: 'saved', received_at });
 // });
 
-// // --- GET /background_api_data ---
+// // GET full history
 // app.get('/background_api_data', (req, res) => {
-//   const data = readJson(BACKGROUND_STORE);
-//   res.json(data);
+//   // stream JSON‑lines as array
+//   res.setHeader('Content-Type', 'application/json');
+//   res.write('[');
+//   const rs = fs.createReadStream(FULL_LOG, { encoding: 'utf-8' });
+//   let first = true;
+//   rs.on('data', chunk => {
+//     chunk.split('\n').forEach(line => {
+//       if (line.trim()) {
+//         if (!first) res.write(',');
+//         res.write(line);
+//         first = false;
+//       }
+//     });
+//   });
+//   rs.on('end', () => {
+//     res.write(']');
+//     res.end();
+//   });
 // });
 
-// // --- GET /recent_background_api_data ---
+// // GET recent snapshot
 // app.get('/recent_background_api_data', (req, res) => {
-//   const data = readJson(RECENT_STORE);
-//   res.json(data);
+//   res.json(recentData);
 // });
 
-// // --- Start server ---
+// // Graceful shutdown to flush recentData
+// function flushAndExit() {
+//   fs.writeFileSync(RECENT_LOG, JSON.stringify(recentData, null, 2));
+//   process.exit();
+// }
+// process.on('SIGINT', flushAndExit);
+// process.on('SIGTERM', flushAndExit);
+
 // app.listen(PORT, () => {
 //   console.log(`🚀 Server running on http://localhost:${PORT}`);
 // });
 
-
-const express = require('express');
-const fs = require('fs');
-const path = require('path');
-const cors = require('cors');
-const bodyParser = require('body-parser');
+// server.js
+const express      = require('express');
+const fs           = require('fs');
+const path         = require('path');
+const cors         = require('cors');
+const compression  = require('compression');
+const morgan       = require('morgan');
+const bodyParser   = require('body-parser');
 
 const app = express();
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
 
-app.use(cors());
-app.use(bodyParser.json({ limit: '50mb' }));
-
-// --- Storage Paths ---
+// --- Paths ---
 const FULL_LOG   = path.join(__dirname, 'background_api_store.jsonl');
 const RECENT_LOG = path.join(__dirname, 'recent_background_store.json');
 
-// Ensure full-log exists
+// --- In-Memory Store ---
+let recentData = {};
+
+// --- Ensure full-log exists ---
 if (!fs.existsSync(FULL_LOG)) fs.writeFileSync(FULL_LOG, '');
 
-// Load or initialize recentData
-let recentData = {};
-if (fs.existsSync(RECENT_LOG)) {
-  try {
-    recentData = JSON.parse(fs.readFileSync(RECENT_LOG, 'utf-8'));
-  } catch { recentData = {}; }
+// --- Load recentData if present ---
+try {
+  if (fs.existsSync(RECENT_LOG)) {
+    recentData = JSON.parse(fs.readFileSync(RECENT_LOG, 'utf8'));
+  }
+} catch {
+  recentData = {};
 }
 
-// Helper: append a line to .jsonl
+// --- Middleware ---
+app.use(cors());
+app.use(compression());               // gzip all responses
+app.use(morgan('tiny'));              // request logging
+app.use(bodyParser.json({ limit: '50mb' }));
+
+// --- Append to full log without blocking ---
 function appendFullLog(entry) {
-  fs.appendFile(FULL_LOG, JSON.stringify(entry) + '\n', err => {
-    if (err) console.error('FullLog write error:', err);
+  const line = JSON.stringify(entry) + '\n';
+  fs.promises.appendFile(FULL_LOG, line).catch(err => {
+    console.error('Error writing to full log:', err);
   });
 }
 
-// Periodically flush recentData to disk
-setInterval(() => {
-  fs.writeFile(RECENT_LOG, JSON.stringify(recentData, null, 2), err => {
-    if (err) console.error('RecentLog write error:', err);
-  });
-}, 5000);
+// --- Periodic flush of recentData to disk (every 60s) ---
+const flushInterval = setInterval(() => {
+  fs.promises.writeFile(RECENT_LOG, JSON.stringify(recentData, null, 2))
+    .catch(err => console.error('Error writing recent log:', err));
+}, 60_000);
 
-// POST endpoint
+// --- POST /background_api ---
 app.post('/background_api', (req, res) => {
   const payload = req.body;
-  const device = payload.install_uid || payload.device_name;
+  const device  = payload.install_uid || payload.device_name;
   if (!device) {
     return res.status(400).json({ error: 'Missing device identifier' });
   }
@@ -133,51 +169,73 @@ app.post('/background_api', (req, res) => {
   // 1) Append to full log
   appendFullLog(entry);
 
-  // 2) Update in-memory recentData
-  const prev = recentData[device]?.data?.screenshot_png_b64;
-  if (!payload.screenshot_png_b64 && prev) {
-    payload.screenshot_png_b64 = prev;
+  // 2) Update in-memory recentData, reuse last screenshot if empty
+  const prevScreenshot = recentData[device]?.data?.screenshot_png_b64;
+  if (!payload.screenshot_png_b64 && prevScreenshot) {
+    payload.screenshot_png_b64 = prevScreenshot;
   }
   recentData[device] = { data: payload, received_at };
 
   res.status(201).json({ status: 'saved', received_at });
 });
 
-// GET full history
+// --- GET /background_api_data (full history) ---
 app.get('/background_api_data', (req, res) => {
-  // stream JSON‑lines as array
   res.setHeader('Content-Type', 'application/json');
   res.write('[');
-  const rs = fs.createReadStream(FULL_LOG, { encoding: 'utf-8' });
+  const stream = fs.createReadStream(FULL_LOG, { encoding: 'utf8' });
   let first = true;
-  rs.on('data', chunk => {
+
+  stream.on('data', chunk => {
     chunk.split('\n').forEach(line => {
-      if (line.trim()) {
-        if (!first) res.write(',');
-        res.write(line);
-        first = false;
-      }
+      if (!line.trim()) return;
+      if (!first) res.write(','); 
+      res.write(line);
+      first = false;
     });
   });
-  rs.on('end', () => {
+
+  stream.on('end', () => {
     res.write(']');
     res.end();
   });
+
+  stream.on('error', err => {
+    console.error('Error reading full log:', err);
+    res.status(500).end();
+  });
 });
 
-// GET recent snapshot
+// --- GET /recent_background_api_data ---
 app.get('/recent_background_api_data', (req, res) => {
   res.json(recentData);
 });
 
-// Graceful shutdown to flush recentData
-function flushAndExit() {
-  fs.writeFileSync(RECENT_LOG, JSON.stringify(recentData, null, 2));
-  process.exit();
-}
-process.on('SIGINT', flushAndExit);
-process.on('SIGTERM', flushAndExit);
+// --- GET /screenshot/:uid (decoded PNG) ---
+app.get('/screenshot/:uid', (req, res) => {
+  const uid = req.params.uid;
+  const record = recentData[uid];
+  if (!record || !record.data.screenshot_png_b64) {
+    return res.status(404).json({ error: 'Screenshot not found' });
+  }
 
+  const imgBuffer = Buffer.from(record.data.screenshot_png_b64, 'base64');
+  res.setHeader('Content-Type', 'image/png');
+  res.setHeader('Cache-Control', 'public, max-age=30'); // cache for 30s
+  res.send(imgBuffer);
+});
+
+// --- Graceful shutdown ---
+function shutdown() {
+  console.log('Flushing recent data to disk before exit...');
+  clearInterval(flushInterval);
+  fs.writeFileSync(RECENT_LOG, JSON.stringify(recentData, null, 2));
+  process.exit(0);
+}
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
+
+// --- Start Server ---
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
 });
