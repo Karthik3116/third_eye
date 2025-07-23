@@ -412,7 +412,7 @@ const path       = require('path');
 const cors       = require('cors');
 const bodyParser = require('body-parser');
 const mongoose   = require('mongoose');
-const bcrypt     = require('bcrypt'); // ++ Import bcrypt
+const bcrypt     = require('bcrypt');
 
 const app  = express();
 const PORT = process.env.PORT || 5000;
@@ -436,57 +436,67 @@ const deviceSchema = new mongoose.Schema({
   lastSeen:   { type: Date, default: Date.now }
 }, { collection: 'devices' });
 
-const Device = mongoose.model('Device', deviceSchema);
-
 const deviceMappingSchema = new mongoose.Schema({
   deviceId: { type: String, required: true, unique: true, index: true },
-  viewCode: { type: String, required: true }, // This will now store the hash
+  viewCode: { type: String, required: true },
 }, { collection: 'device_mapped' });
 
+// ++ NEW: Schema for storing recent device data in MongoDB
+const recentDataSchema = new mongoose.Schema({
+    deviceId:    { type: String, required: true, unique: true, index: true },
+    data:        { type: Object },
+    received_at: { type: Date },
+}, { collection: 'recent_data' });
+
+
+const Device = mongoose.model('Device', deviceSchema);
 const DeviceMapping = mongoose.model('DeviceMapping', deviceMappingSchema);
+const RecentData = mongoose.model('RecentData', recentDataSchema); // ++ NEW: Model for recent data
 
 
-// 2) File‑based logs
+// 2) File‑based logs for auditing (JSON store removed)
 const FULL_LOG    = path.join(__dirname, 'background_api_store.jsonl');
-const RECENT_JSON = path.join(__dirname, 'recent_background_store.json');
-if (!fs.existsSync(FULL_LOG))    fs.writeFileSync(FULL_LOG, '');
-if (!fs.existsSync(RECENT_JSON)) fs.writeFileSync(RECENT_JSON, '{}');
+if (!fs.existsSync(FULL_LOG)) fs.writeFileSync(FULL_LOG, '');
 
 function appendFullLog(entry) {
   fs.appendFileSync(FULL_LOG, JSON.stringify(entry) + '\n');
 }
 
-function loadRecentStore() {
-  try { return JSON.parse(fs.readFileSync(RECENT_JSON, 'utf-8')); }
-  catch { return {}; }
-}
-
-function saveRecentStore(store) {
-  fs.writeFileSync(RECENT_JSON, JSON.stringify(store, null, 2));
-}
+// -- REMOVED: `loadRecentStore` and `saveRecentStore` functions are no longer needed.
 
 // 3) Express middleware
 app.use(cors());
 app.use(bodyParser.json({ limit: '50MB' }));
 
-// 4) Device posts data
+// 4) Device posts data (MODIFIED to use MongoDB)
 app.post('/background_api/:device', async (req, res) => {
   const device      = req.params.device;
-  const payload     = req.body;
-  const received_at = new Date().toISOString();
+  let payload       = req.body;
+  const received_at = new Date();
 
   // 4a) audit log
-  appendFullLog({ device, data: payload, received_at });
+  appendFullLog({ device, data: payload, received_at: received_at.toISOString() });
 
-  // 4b) recent store
-  const store = loadRecentStore();
-  if (!payload.screenshot_png_b64 && store[device]?.data?.screenshot_png_b64) {
-    payload.screenshot_png_b64 = store[device].data.screenshot_png_b64;
+  // 4b) ++ MODIFIED: Save recent data to MongoDB instead of a JSON file
+  try {
+    // If the new payload has no screenshot, try to preserve the last one from the DB
+    if (!payload.screenshot_png_b64) {
+        const existingData = await RecentData.findOne({ deviceId: device }).lean();
+        if (existingData?.data?.screenshot_png_b64) {
+            payload.screenshot_png_b64 = existingData.data.screenshot_png_b64;
+        }
+    }
+    
+    await RecentData.findOneAndUpdate(
+        { deviceId: device },
+        { data: payload, received_at: received_at },
+        { upsert: true } // Creates the document if it doesn't exist
+    );
+  } catch (err) {
+      console.error('MongoDB upsert error for RecentData:', err);
   }
-  store[device] = { data: payload, received_at };
-  saveRecentStore(store);
 
-  // 4c) upsert device metadata
+  // 4c) upsert device metadata (no changes here)
   try {
     await Device.findOneAndUpdate(
       { deviceId: device },
@@ -497,34 +507,49 @@ app.post('/background_api/:device', async (req, res) => {
       { upsert: true }
     );
   } catch (err) {
-    console.error('MongoDB upsert error:', err);
+    console.error('MongoDB upsert error for Device:', err);
   }
 
-  res.status(201).json({ status:'saved', device, received_at });
+  res.status(201).json({ status:'saved', device, received_at: received_at.toISOString() });
 });
 
-// 5) Fetch recent data
+// 5) Fetch recent data (MODIFIED to use MongoDB)
 app.get('/recent_background_api_data/:device', async (req, res) => {
   const device = req.params.device;
 
   if (device === 'professor') {
-    return res.json(loadRecentStore());
+    // For admin, fetch all recent data entries
+    const allData = await RecentData.find({}).lean();
+    const store = allData.reduce((acc, item) => {
+        acc[item.deviceId] = {
+            data: item.data,
+            received_at: item.received_at,
+        };
+        return acc;
+    }, {});
+    return res.json(store);
   }
 
+  // First, check if the user is authorized to view this device
   const doc = await Device.findOne({ deviceId: device }).lean();
   if (!doc || !doc.authorized) {
     return res.status(403).json({ error:'Device not authorized' });
   }
 
-  const store = loadRecentStore();
-  const entry = store[device];
-  if (!entry) return res.status(404).json({ error:'Not found' });
-  res.json({ [device]: entry });
+  // ++ MODIFIED: Fetch the specific device data from MongoDB
+  const entry = await RecentData.findOne({ deviceId: device }).lean();
+  
+  if (!entry) {
+    return res.status(404).json({ error:'Not found. The device may not have sent any data yet.' });
+  }
+  
+  // Return data in the same format as before
+  res.json({ [device]: { data: entry.data, received_at: entry.received_at } });
 });
 
-// 6) Control endpoints
-const captureEnabled = {};
 
+// 6) Control endpoints (no changes)
+const captureEnabled = {};
 app.post('/control/:device', async (req, res) => {
   const device = req.params.device;
   const doc    = await Device.findOne({ deviceId: device }).lean();
@@ -534,7 +559,6 @@ app.post('/control/:device', async (req, res) => {
   captureEnabled[device] = !!req.body.capture_enabled;
   res.json({ device, capture_enabled: captureEnabled[device] });
 });
-
 app.get('/control/:device', async (req, res) => {
   const device = req.params.device;
   const doc    = await Device.findOne({ deviceId: device }).lean();
@@ -545,37 +569,28 @@ app.get('/control/:device', async (req, res) => {
 });
 
 
-// Endpoint to check if a device has a view code (unchanged)
+// Auth endpoints (no changes)
 app.get('/api/auth/status/:deviceId', async (req, res) => {
     const { deviceId } = req.params;
-
     const device = await Device.findOne({ deviceId }).lean();
     if (!device || !device.authorized) {
         return res.status(403).json({ error: 'Device not found or not authorized by admin.' });
     }
-
     const mapping = await DeviceMapping.findOne({ deviceId }).lean();
     res.json({ isMapped: !!mapping });
 });
-
-// ++ MODIFIED: Endpoint to log in by verifying or setting an encrypted view code
 app.post('/api/auth/login', async (req, res) => {
     const { deviceId, viewCode } = req.body;
-    const saltRounds = 10; // Standard salt rounds for bcrypt
-
+    const saltRounds = 10;
     if (!deviceId || !viewCode) {
         return res.status(400).json({ success: false, message: 'Device ID and view code are required.' });
     }
-
     const device = await Device.findOne({ deviceId }).lean();
     if (!device || !device.authorized) {
         return res.status(403).json({ success: false, message: 'Device is not authorized.' });
     }
-
     const mapping = await DeviceMapping.findOne({ deviceId });
-
     if (mapping) {
-        // Device is mapped, so compare the provided code with the stored hash
         const isMatch = await bcrypt.compare(viewCode, mapping.viewCode);
         if (isMatch) {
             res.json({ success: true, message: 'Login successful.' });
@@ -583,7 +598,6 @@ app.post('/api/auth/login', async (req, res) => {
             res.status(401).json({ success: false, message: 'Invalid view code.' });
         }
     } else {
-        // No mapping exists, so hash the new code and create the mapping
         try {
             const hashedCode = await bcrypt.hash(viewCode, saltRounds);
             const newMapping = new DeviceMapping({ deviceId, viewCode: hashedCode });
@@ -597,22 +611,18 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 
-// 7) Admin endpoints
+// 7) Admin endpoints (no changes)
 app.get('/admin/devices', async (_req, res) => {
   const devices = await Device.find({})
     .select('deviceId authorized lastSeen -_id')
     .lean();
-
   const mapped = devices.map(d => ({
     device: d.deviceId,
     authorized: d.authorized,
     last_seen: d.lastSeen,
   }));
-
   res.json({ devices: mapped });
 });
-
-
 app.post('/admin/authorize/:device', async (req, res) => {
   const device      = req.params.device;
   const { authorize } = req.body;
@@ -625,7 +635,7 @@ app.post('/admin/authorize/:device', async (req, res) => {
   res.json({ device, authorized: doc.authorized });
 });
 
-// 8) Graceful shutdown
+// 8) Graceful shutdown (no changes)
 function shutDown() {
   mongoose.disconnect().then(() => process.exit());
 }
