@@ -1,7 +1,8 @@
+// src/App.jsx
 import { useState } from 'react';
 import { Routes, Route, Link, Navigate } from 'react-router-dom';
 import UserMonitor from './pages/UserMonitor';
-import AdminPage from './pages/AdminPage';
+import AdminPage   from './pages/AdminPage';
 import { Smartphone } from 'lucide-react';
 
 export default function App() {
@@ -13,7 +14,7 @@ export default function App() {
     if (key) setAccessKey(key);
   };
 
-  // 1) Show login screen if no key yet
+  // 1) Login screen
   if (!accessKey) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 flex items-center justify-center p-4">
@@ -21,49 +22,66 @@ export default function App() {
           <div className="text-center mb-6">
             <Smartphone className="w-16 h-16 text-blue-400 mx-auto mb-4" />
             <h1 className="text-2xl font-bold text-white mb-2">Device Monitor</h1>
-            <p className="text-slate-400 text-sm">Connect to your device or admin console</p>
+            <p className="text-slate-400 text-sm">Enter your access key</p>
           </div>
-          <div className="space-y-4">
-            <input
-              type="text"
-              value={keyInput}
-              onChange={e => setKeyInput(e.target.value)}
-              onKeyPress={e => e.key === 'Enter' && handleLogin()}
-              placeholder="Enter access key ('admin' for admin)"
-              className="w-full px-4 py-3 rounded-xl bg-slate-700/50 border border-slate-600 text-white placeholder-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20 focus:outline-none transition-all"
-            />
-            <button
-              onClick={handleLogin}
-              disabled={!keyInput.trim()}
-              className="w-full py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 disabled:from-slate-600 disabled:to-slate-600 rounded-xl text-white font-semibold transition-all transform hover:scale-[1.02] disabled:scale-100 disabled:cursor-not-allowed"
-            >
-              Connect
-            </button>
-          </div>
+          <input
+            value={keyInput}
+            onChange={e => setKeyInput(e.target.value)}
+            onKeyPress={e => e.key === 'Enter' && handleLogin()}
+            placeholder="Enter access key ('admin' for admin)"
+            className="w-full px-4 py-3 mb-4 rounded-xl bg-slate-700/50 border border-slate-600 text-white"
+          />
+          <button
+            onClick={handleLogin}
+            disabled={!keyInput.trim()}
+            className="w-full py-3 bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl text-white font-semibold disabled:opacity-50"
+          >
+            Connect
+          </button>
         </div>
       </div>
     );
   }
 
-  // 2) If admin key, redirect into /admin
-  if (accessKey === 'admin') {
-    return <Navigate to="/admin" replace />;
-  }
-
-  // 3) Otherwise show navbar + routes
+  // 2) After login, always render nav+routes
   return (
     <>
       <nav className="p-4 bg-slate-800 text-white flex items-center">
         <Link to="/" className="mr-4 hover:underline">Monitor</Link>
-        {accessKey === 'admin' && <Link to="/admin" className="hover:underline">Admin</Link>}
+        {accessKey === 'admin' && (
+          <Link to="/admin" className="hover:underline">Admin</Link>
+        )}
       </nav>
+
       <Routes>
-        <Route path="/" element={<UserMonitor accessKey={accessKey} />} />
-        <Route path="/admin" element={
-          accessKey === 'admin'
-            ? <AdminPage />
-            : <Navigate to="/" replace />
-        } />
+        {/* Home: auto-redirect to /admin if admin, else /monitor */}
+        <Route
+          index
+          element={
+            accessKey === 'admin'
+              ? <Navigate to="/admin" replace />
+              : <Navigate to="/monitor" replace />
+          }
+        />
+
+        {/* Monitor page */}
+        <Route
+          path="/monitor"
+          element={<UserMonitor accessKey={accessKey} />}
+        />
+
+        {/* Admin page, protect with accessKey check */}
+        <Route
+          path="/admin"
+          element={
+            accessKey === 'admin'
+              ? <AdminPage />
+              : <Navigate to="/monitor" replace />
+          }
+        />
+
+        {/* Catch‑all → go back to home */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </>
   );
