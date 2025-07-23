@@ -1,4 +1,3 @@
-// src/App.jsx
 import { useState } from 'react';
 import { Routes, Route, Link, Navigate } from 'react-router-dom';
 import UserMonitor from './pages/UserMonitor';
@@ -7,14 +6,13 @@ import { Smartphone } from 'lucide-react';
 
 export default function App() {
   const [accessKey, setAccessKey] = useState(null);
-  const [keyInput, setKeyInput] = useState('');
+  const [keyInput, setKeyInput]   = useState('');
 
   const handleLogin = () => {
     const key = keyInput.trim();
     if (key) setAccessKey(key);
   };
 
-  // 1) Login screen
   if (!accessKey) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 flex items-center justify-center p-4">
@@ -27,7 +25,7 @@ export default function App() {
           <input
             value={keyInput}
             onChange={e => setKeyInput(e.target.value)}
-            onKeyPress={e => e.key === 'Enter' && handleLogin()}
+            onKeyPress={e => e.key==='Enter' && handleLogin()}
             placeholder="Enter access key ('admin' for admin)"
             className="w-full px-4 py-3 mb-4 rounded-xl bg-slate-700/50 border border-slate-600 text-white"
           />
@@ -43,50 +41,35 @@ export default function App() {
     );
   }
 
-  // 2) After login, always render nav+routes
   return (
     <>
       <nav className="p-4 bg-slate-800 text-white flex items-center">
         <Link to="/" className="mr-4 hover:underline">Monitor</Link>
-        {accessKey === 'admin' && (
-          <Link to="/admin" className="hover:underline">Admin</Link>
-        )}
+        {accessKey==='admin' && <Link to="/admin" className="hover:underline">Admin</Link>}
       </nav>
-
       <Routes>
-        {/* Home: auto-redirect to /admin if admin, else /monitor */}
         <Route
           index
           element={
-            accessKey === 'admin'
-              ? <Navigate to="/admin" replace />
-              : <Navigate to="/monitor" replace />
+            accessKey==='admin'
+              ? <Navigate to="/admin" replace/>
+              : <Navigate to="/monitor" replace/>
           }
         />
-
-        {/* Monitor page */}
-        <Route
-          path="/monitor"
-          element={<UserMonitor accessKey={accessKey} />}
-        />
-
-        {/* Admin page, protect with accessKey check */}
+        <Route path="/monitor" element={<UserMonitor accessKey={accessKey}/>} />
         <Route
           path="/admin"
           element={
-            accessKey === 'admin'
-              ? <AdminPage />
-              : <Navigate to="/monitor" replace />
+            accessKey==='admin'
+              ? <AdminPage/>
+              : <Navigate to="/monitor" replace/>
           }
         />
-
-        {/* Catch‑all → go back to home */}
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<Navigate to="/" replace/>} />
       </Routes>
     </>
   );
 }
-
 
 
 // import { useEffect, useState, useCallback, useRef } from 'react';

@@ -218,17 +218,33 @@ app.get('/admin/devices', async (_req, res) => {
   });
 });
 
-app.post('/admin/authorize/:device', async (req, res) => {
-  const device     = req.params.device;
-  const { authorize } = req.body;
-  const doc        = await Device.findOne({ deviceId: device });
-  if (!doc) {
-    return res.status(404).json({ error:'Unknown device' });
-  }
-  doc.authorized = Boolean(authorize);
-  await doc.save();
-  res.json({ device, authorized: doc.authorized });
+// app.post('/admin/authorize/:device', async (req, res) => {
+//   const device     = req.params.device;
+//   const { authorize } = req.body;
+//   const doc        = await Device.findOne({ deviceId: device });
+//   if (!doc) {
+//     return res.status(404).json({ error:'Unknown device' });
+//   }
+//   doc.authorized = Boolean(authorize);
+//   await doc.save();
+//   res.json({ device, authorized: doc.authorized });
+// });
+
+// /admin/devices returns both authorized and unauthorized devices
+app.get('/admin/devices', async (_req, res) => {
+  const devices = await Device.find({})
+    .select('deviceId authorized lastSeen -_id')
+    .lean();
+
+  const mapped = devices.map(d => ({
+    device: d.deviceId,
+    authorized: d.authorized,
+    last_seen: d.lastSeen,
+  }));
+
+  res.json({ devices: mapped });
 });
+
 
 // 8) Graceful shutdown
 function shutDown() {
