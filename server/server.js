@@ -90,9 +90,7 @@ if (!MONGO) {
   process.exit(1);
 }
 
-// ——————————————————————————
 // 1) MongoDB setup
-// ——————————————————————————
 mongoose.connect(MONGO)
   .then(() => console.log('✅ MongoDB connected'))
   .catch(err => {
@@ -108,46 +106,36 @@ const deviceSchema = new mongoose.Schema({
 
 const Device = mongoose.model('Device', deviceSchema);
 
-// ——————————————————————————
-// 2) File‐based logs
-// ——————————————————————————
+// 2) File‑based logs
 const FULL_LOG    = path.join(__dirname, 'background_api_store.jsonl');
 const RECENT_JSON = path.join(__dirname, 'recent_background_store.json');
-
-// ensure files exist
 if (!fs.existsSync(FULL_LOG))    fs.writeFileSync(FULL_LOG, '');
 if (!fs.existsSync(RECENT_JSON)) fs.writeFileSync(RECENT_JSON, '{}');
 
 function appendFullLog(entry) {
   fs.appendFileSync(FULL_LOG, JSON.stringify(entry) + '\n');
 }
+
 function loadRecentStore() {
-  try {
-    return JSON.parse(fs.readFileSync(RECENT_JSON, 'utf-8'));
-  } catch {
-    return {};
-  }
+  try { return JSON.parse(fs.readFileSync(RECENT_JSON, 'utf-8')); }
+  catch { return {}; }
 }
+
 function saveRecentStore(store) {
   fs.writeFileSync(RECENT_JSON, JSON.stringify(store, null, 2));
 }
 
-// ——————————————————————————
 // 3) Express middleware
-// ——————————————————————————
 app.use(cors());
-app.use(bodyParser.json({ limit: '50mb' }));
+app.use(bodyParser.json({ limit: '50MB' }));
 
-// ——————————————————————————
 // 4) Device posts data
-//    POST /background_api/:device
-// ——————————————————————————
 app.post('/background_api/:device', async (req, res) => {
   const device     = req.params.device;
   const payload    = req.body;
   const received_at = new Date().toISOString();
 
-  // 4a) full audit log
+  // 4a) audit log
   appendFullLog({ device, data: payload, received_at });
 
   // 4b) recent store
@@ -158,7 +146,7 @@ app.post('/background_api/:device', async (req, res) => {
   store[device] = { data: payload, received_at };
   saveRecentStore(store);
 
-  // 4c) upsert device metadata in Mongo
+  // 4c) upsert device metadata
   try {
     await Device.findOneAndUpdate(
       { deviceId: device },
@@ -175,19 +163,14 @@ app.post('/background_api/:device', async (req, res) => {
   res.status(201).json({ status:'saved', device, received_at });
 });
 
-// ——————————————————————————
 // 5) Fetch recent data
-//    GET /recent_background_api_data/:device
-// ——————————————————————————
 app.get('/recent_background_api_data/:device', async (req, res) => {
   const device = req.params.device;
 
-  // professor sees all
   if (device === 'professor') {
     return res.json(loadRecentStore());
   }
 
-  // enforce authorization
   const doc = await Device.findOne({ deviceId: device }).lean();
   if (!doc || !doc.authorized) {
     return res.status(403).json({ error:'Device not authorized' });
@@ -195,16 +178,11 @@ app.get('/recent_background_api_data/:device', async (req, res) => {
 
   const store = loadRecentStore();
   const entry = store[device];
-  if (!entry) {
-    return res.status(404).json({ error:'Not found' });
-  }
+  if (!entry) return res.status(404).json({ error:'Not found' });
   res.json({ [device]: entry });
 });
 
-// ——————————————————————————
 // 6) Control endpoints
-//    GET/POST /control/:device
-// ——————————————————————————
 const captureEnabled = {};
 
 app.post('/control/:device', async (req, res) => {
@@ -226,11 +204,7 @@ app.get('/control/:device', async (req, res) => {
   res.json({ device, capture_enabled: !!captureEnabled[device], authorized: true });
 });
 
-// ——————————————————————————
 // 7) Admin endpoints
-//    GET  /admin/devices
-//    POST /admin/authorize/:device
-// ——————————————————————————
 app.get('/admin/devices', async (_req, res) => {
   const pending = await Device.find({ authorized: false })
     .select('deviceId lastSeen -_id')
@@ -256,9 +230,7 @@ app.post('/admin/authorize/:device', async (req, res) => {
   res.json({ device, authorized: doc.authorized });
 });
 
-// ——————————————————————————
 // 8) Graceful shutdown
-// ——————————————————————————
 function shutDown() {
   mongoose.disconnect().then(() => process.exit());
 }
