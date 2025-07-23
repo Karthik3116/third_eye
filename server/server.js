@@ -86,11 +86,13 @@ const app  = express();
 const PORT = process.env.PORT || 5000;
 const MONGO = process.env.MONGO_URI;
 if (!MONGO) {
-  console.error('❌ MONGO_URI not set');
+  console.error('❌ MONGO_URI not set in .env');
   process.exit(1);
 }
 
-// --- MongoDB setup ---
+// ——————————————————————————
+// 1) MongoDB setup
+// ——————————————————————————
 mongoose.connect(MONGO, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
@@ -109,16 +111,20 @@ const deviceSchema = new mongoose.Schema({
 
 const Device = mongoose.model('Device', deviceSchema);
 
-// --- File‐based full log + file‐backed recentData ---
-const FULL_LOG     = path.join(__dirname, 'background_api_store.jsonl');
-const RECENT_JSON  = path.join(__dirname, 'recent_background_store.json');
+// ——————————————————————————
+// 2) File‑based logs
+// ——————————————————————————
+const FULL_LOG    = path.join(__dirname, 'background_api_store.jsonl');
+const RECENT_JSON = path.join(__dirname, 'recent_background_store.json');
 
-// ensure full log exists
-if (!fs.existsSync(FULL_LOG)) fs.writeFileSync(FULL_LOG, '');
-// ensure recent JSON exists
+// ensure files exist
+if (!fs.existsSync(FULL_LOG))    fs.writeFileSync(FULL_LOG, '');
 if (!fs.existsSync(RECENT_JSON)) fs.writeFileSync(RECENT_JSON, '{}');
 
-// helper to load the entire recent store from disk
+function appendFullLog(entry) {
+  fs.appendFileSync(FULL_LOG, JSON.stringify(entry) + '\n');
+}
+
 function loadRecentStore() {
   try {
     return JSON.parse(fs.readFileSync(RECENT_JSON, 'utf-8'));
@@ -127,82 +133,82 @@ function loadRecentStore() {
   }
 }
 
-// helper to save the entire recent store to disk
 function saveRecentStore(store) {
   fs.writeFileSync(RECENT_JSON, JSON.stringify(store, null, 2));
 }
 
-// append one entry to the full log file
-function appendFullLog(entry) {
-  fs.appendFile(FULL_LOG, JSON.stringify(entry) + '\n', 
-    err => err && console.error('Full log write error:', err)
-  );
-}
-
+// ——————————————————————————
+// 3) Express middleware
+// ——————————————————————————
 app.use(cors());
 app.use(bodyParser.json({ limit: '50mb' }));
 
-// --- 1) Device posts data ---
+// ——————————————————————————
+// 4) Device POST endpoint
+//    /background_api/:device
+// ——————————————————————————
 app.post('/background_api/:device', async (req, res) => {
   const device     = req.params.device;
   const payload    = req.body;
   const received_at = new Date().toISOString();
 
-  // 1a) append to full jsonl log
+  // 4a) full audit log
   appendFullLog({ device, data: payload, received_at });
 
-  // 1b) load current recent store from disk
+  // 4b) recent store
   const recentStore = loadRecentStore();
-
-  // 1c) carry‑over last screenshot if missing
   if (!payload.screenshot_png_b64 && recentStore[device]?.data?.screenshot_png_b64) {
     payload.screenshot_png_b64 = recentStore[device].data.screenshot_png_b64;
   }
-
-  // 1d) update in‑store and persist
   recentStore[device] = { data: payload, received_at };
   saveRecentStore(recentStore);
 
-  // 1e) upsert device metadata in MongoDB
+  // 4c) upsert device metadata in Mongo
   try {
     await Device.findOneAndUpdate(
       { deviceId: device },
-      { $set: { lastSeen: new Date() } },
-      { upsert: true, setDefaultsOnInsert: true }
+      {
+        $setOnInsert: { authorized: false },  // new devices default to unauthorized
+        $set:        { lastSeen: new Date() }
+      },
+      { upsert: true }
     );
   } catch (err) {
-    console.error('Mongo upsert error:', err);
+    console.error('MongoDB upsert error:', err);
   }
 
   res.status(201).json({ status:'saved', device, received_at });
 });
 
-// --- 2) Fetch recent data (only if authorized) ---
+// ——————————————————————————
+// 5) Get recent data
+//    /recent_background_api_data/:device
+// ——————————————————————————
 app.get('/recent_background_api_data/:device', async (req, res) => {
   const device = req.params.device;
 
-  // professor sees all
+  // 5a) special “professor” key sees all
   if (device === 'professor') {
-    const all = loadRecentStore();
-    return res.json(all);
+    return res.json(loadRecentStore());
   }
 
-  // check authorization in Mongo
+  // 5b) enforce authorization
   const doc = await Device.findOne({ deviceId: device }).lean();
   if (!doc || !doc.authorized) {
     return res.status(403).json({ error:'Device not authorized' });
   }
 
-  // fetch from disk
+  // 5c) load and return single device entry
   const store = loadRecentStore();
   const entry = store[device];
-  if (!entry) {
-    return res.status(404).json({ error:'Not found' });
-  }
-  return res.json({ [device]: entry });
+  if (!entry) return res.status(404).json({ error:'Not found' });
+  res.json({ [device]: entry });
 });
 
-// --- 3) Control endpoints (only if authorized) ---
+// ——————————————————————————
+// 6) Control endpoints
+//    /control/:device
+// ——————————————————————————
 const captureEnabled = {};
 
 app.post('/control/:device', async (req, res) => {
@@ -224,14 +230,16 @@ app.get('/control/:device', async (req, res) => {
   res.json({ device, capture_enabled: !!captureEnabled[device], authorized: true });
 });
 
-// --- 4) Admin endpoints ---
-app.get('/admin/devices', async (req, res) => {
-  // list all unauthorized devices
+// ——————————————————————————
+// 7) Admin endpoints
+//    GET  /admin/devices
+//    POST /admin/authorize/:device
+// ——————————————————————————
+app.get('/admin/devices', async (_req, res) => {
   const pending = await Device.find({ authorized: false })
     .select('deviceId lastSeen -_id')
     .lean();
 
-  // format to front‑end shape
   const formatted = pending.map(d => ({
     device:    d.deviceId,
     last_seen: d.lastSeen
@@ -251,13 +259,14 @@ app.post('/admin/authorize/:device', async (req, res) => {
   res.json({ device, authorized: doc.authorized });
 });
 
-// --- Graceful shutdown ---
-function flushAndExit() {
-  // nothing special for recent store: it's already on disk
+// ——————————————————————————
+// 8) Graceful shutdown
+// ——————————————————————————
+function shutDown() {
   mongoose.disconnect().then(() => process.exit());
 }
-process.on('SIGINT', flushAndExit);
-process.on('SIGTERM', flushAndExit);
+process.on('SIGINT', shutDown);
+process.on('SIGTERM', shutDown);
 
 app.listen(PORT, () => {
   console.log(`🚀 Listening on http://localhost:${PORT}`);
