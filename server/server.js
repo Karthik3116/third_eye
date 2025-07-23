@@ -173,6 +173,7 @@
 //   console.log(`🚀 Listening on http://localhost:${PORT}`);
 // });
 
+// server.js
 require('dotenv').config();
 const express    = require('express');
 const fs         = require('fs');
@@ -192,10 +193,7 @@ if (!MONGO) {
 // --- MongoDB setup --------------------------------------------------------
 mongoose.connect(MONGO)
   .then(() => console.log('✅ MongoDB connected'))
-  .catch(err => {
-    console.error('❌ MongoDB connection error:', err);
-    process.exit(1);
-  });
+  .catch(err => { console.error(err); process.exit(1); });
 
 const deviceSchema = new mongoose.Schema({
   deviceId:   { type: String, required: true, unique: true },
@@ -270,43 +268,69 @@ app.post('/background_api/:device', async (req, res) => {
 
   await Device.findOneAndUpdate(
     { deviceId: device },
-    { $setOnInsert: { deviceId: device, authorized: false }, $set: { lastSeen: new Date() } },
+    { $setOnInsert: { deviceId: device }, $set: { lastSeen: new Date() } },
     { upsert: true }
   );
   res.status(201).json({ status:'saved', device, received_at });
 });
 
-// --- Auth & viewCode middleware ------------------------------------------
+// --- Auth + viewCode middleware ------------------------------------------
+// Requires: device exists, is authorized by admin, and viewCode header matches
 async function requireAuthAndViewCode(req, res, next) {
-  const device = req.params.device;
+  const device     = req.params.device;
   const headerCode = req.headers['x-view-code'];
-  const doc = await Device.findOne({ deviceId: device }).lean();
-  if (!doc || !doc.authorized) return res.status(403).json({ error: 'Device not authorized' });
-  if (!doc.viewCode || doc.viewCode !== headerCode) return res.status(403).json({ error: 'Invalid view code' });
+  const doc        = await Device.findOne({ deviceId: device }).lean();
+
+  if (!doc) {
+    return res.status(404).json({ error: 'Unknown device' });
+  }
+  if (!doc.authorized) {
+    return res.status(403).json({ error: 'Device not authorized' });
+  }
+  if (!doc.viewCode) {
+    return res.status(403).json({ error: 'No view code set for device' });
+  }
+  if (doc.viewCode !== headerCode) {
+    return res.status(403).json({ error: 'Invalid view code' });
+  }
   next();
 }
 
 // --- Fetch recent data ---------------------------------------------------
-app.get('/recent_background_api_data/:device', requireAuthAndViewCode, async (req, res) => {
-  const device = req.params.device;
-  const store  = loadRecentStore();
-  const entry  = store[device] || null;
-  // always return 200 with {} or with data
-  if (!entry) return res.json({});
-  res.json({ [device]: entry });
-});
+app.get(
+  '/recent_background_api_data/:device',
+  requireAuthAndViewCode,
+  async (req, res) => {
+    const device = req.params.device;
+    const store  = loadRecentStore();
+    const entry  = store[device] || null;
+    // always 200
+    if (!entry) return res.json({});
+    res.json({ [device]: entry });
+  }
+);
 
 // --- Control endpoints ---------------------------------------------------
 const captureEnabled = {};
-app.post('/control/:device', requireAuthAndViewCode, async (req, res) => {
-  const device = req.params.device;
-  captureEnabled[device] = !!req.body.capture_enabled;
-  res.json({ device, capture_enabled: captureEnabled[device] });
-});
-app.get('/control/:device', requireAuthAndViewCode, async (req, res) => {
-  const device = req.params.device;
-  res.json({ device, capture_enabled: !!captureEnabled[device] });
-});
+
+app.post(
+  '/control/:device',
+  requireAuthAndViewCode,
+  async (req, res) => {
+    const device = req.params.device;
+    captureEnabled[device] = !!req.body.capture_enabled;
+    res.json({ device, capture_enabled: captureEnabled[device] });
+  }
+);
+
+app.get(
+  '/control/:device',
+  requireAuthAndViewCode,
+  async (req, res) => {
+    const device = req.params.device;
+    res.json({ device, capture_enabled: !!captureEnabled[device] });
+  }
+);
 
 // --- Admin endpoints -----------------------------------------------------
 app.get('/admin/devices', async (_req, res) => {
@@ -321,11 +345,14 @@ app.get('/admin/devices', async (_req, res) => {
     }))
   });
 });
+
 app.post('/admin/authorize/:device', async (req, res) => {
   const { device } = req.params;
   const { authorize } = req.body;
   const doc = await Device.findOne({ deviceId: device });
-  if (!doc) return res.status(404).json({ error:'Unknown device' });
+  if (!doc) {
+    return res.status(404).json({ error:'Unknown device' });
+  }
   doc.authorized = Boolean(authorize);
   await doc.save();
   res.json({ device, authorized: doc.authorized });

@@ -586,56 +586,56 @@ import {
 const BASE_URL = 'https://third-eye-txe8.onrender.com';
 
 export default function UserMonitor({ deviceId, viewCode }) {
-  // State management
-  const [isPosting, setIsPosting] = useState(false);
-  const [deviceData, setDeviceData] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState('disconnected');
-  const [lastUpdate, setLastUpdate] = useState(null);
+  // — state
+  const [isPosting, setIsPosting]       = useState(false);
+  const [deviceData, setDeviceData]     = useState(null);
+  const [loading, setLoading]           = useState(false);
+  const [status, setStatus]             = useState('disconnected');
+  const [lastUpdate, setLastUpdate]     = useState(null);
 
-  // UI state
+  // — UI
   const [showSettings, setShowSettings] = useState(false);
-  const [refreshRate, setRefreshRate] = useState(3000);
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [refreshRate, setRefreshRate]   = useState(3000);
+  const [autoRefresh, setAutoRefresh]   = useState(true);
   const [notifications, setNotifications] = useState([]);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showDeviceInfo, setShowDeviceInfo] = useState(false);
-  const [orientation, setOrientation] = useState('portrait');
+  const [orientation, setOrientation]   = useState('portrait');
 
-  // Page visibility & inactivity
+  // — visibility & inactivity
   const [isPageVisible, setIsPageVisible] = useState(true);
   const [inactiveTimer, setInactiveTimer] = useState(0);
   const [showInactiveWarning, setShowInactiveWarning] = useState(false);
 
-  const intervalRef = useRef(null);
-  const inactiveTimerRef = useRef(null);
-  const inactiveCountRef = useRef(0);
+  const intervalRef       = useRef(null);
+  const inactiveTimerRef  = useRef(null);
+  const inactiveCountRef  = useRef(0);
 
-  // Helper to inject auth headers including viewCode
+  // — helper for headers
   const authHeaders = () => ({
     'Content-Type': 'application/json',
     'x-view-code': viewCode
   });
 
-  // === load previous capture_enabled on mount ===
+  // — load last capture_enabled
   useEffect(() => {
     if (!deviceId) return;
     (async () => {
       try {
         const res  = await fetch(`${BASE_URL}/control/${deviceId}`, { headers: authHeaders() });
         const data = await res.json();
-        setIsPosting(data.capture_enabled || false);
+        setIsPosting(data.capture_enabled);
       } catch (e) {
-        console.error('Failed to load previous state:', e);
+        console.error(e);
       }
     })();
   }, [deviceId, viewCode]);
 
-  // === auto-stop on close/visibility-change ===
+  // — auto‑stop logic on close/hidden
   const autoStopOnClose = useCallback(async () => {
     if (!isPosting) return;
     const body = JSON.stringify({ capture_enabled: false });
-    navigator.sendBeacon(`${BASE_URL}/control/${deviceId}`, new Blob([body], { type: 'application/json' })) ||
+    navigator.sendBeacon(`${BASE_URL}/control/${deviceId}`, new Blob([body], { type:'application/json' })) ||
       await fetch(`${BASE_URL}/control/${deviceId}`, {
         method: 'POST',
         headers: authHeaders(),
@@ -645,43 +645,31 @@ export default function UserMonitor({ deviceId, viewCode }) {
   }, [isPosting, deviceId, viewCode]);
 
   useEffect(() => {
-    const handleVisibilityChange = () => {
+    const onVisChange = () => {
       const visible = !document.hidden;
       setIsPageVisible(visible);
-      if (visible) {
+      if (!visible && isPosting) {
+        startInactiveTimer();
+        addNotification('Page inactive – monitoring…', 'info');
+      } else {
         clearInterval(inactiveTimerRef.current);
         inactiveCountRef.current = 0;
         setInactiveTimer(0);
         setShowInactiveWarning(false);
-        addNotification('Page is now active', 'success');
-      } else if (isPosting) {
-        startInactiveTimer();
-        addNotification('Page is now inactive – monitoring…', 'info');
+        addNotification('Page active', 'success');
       }
     };
-
-    const handleBeforeUnload = e => {
-      if (isPosting) {
-        autoStopOnClose();
-        const msg = 'Capture is active. Closing will stop the capture.';
-        e.returnValue = msg;
-        return msg;
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('visibilitychange', onVisChange);
+    window.addEventListener('beforeunload', autoStopOnClose);
     window.addEventListener('unload', autoStopOnClose);
-
     return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', onVisChange);
+      window.removeEventListener('beforeunload', autoStopOnClose);
       window.removeEventListener('unload', autoStopOnClose);
-      clearInterval(inactiveTimerRef.current);
     };
   }, [isPosting, autoStopOnClose]);
 
-  // === inactivity timer ===
+  // — inactivity timer
   const startInactiveTimer = () => {
     setShowInactiveWarning(true);
     inactiveCountRef.current = 0;
@@ -694,44 +682,29 @@ export default function UserMonitor({ deviceId, viewCode }) {
       }
     }, 1000);
   };
-
   const autoStopCapture = async () => {
-    try {
-      const res = await fetch(`${BASE_URL}/control/${deviceId}`, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify({ capture_enabled: false })
-      });
-      if (res.ok) {
-        setIsPosting(false);
-        setDeviceData(null);
-        setStatus('disconnected');
-        setShowInactiveWarning(false);
-        addNotification('Capture stopped due to inactivity (1 min)', 'info');
-      }
-    } catch (e) {
-      console.error('Auto-stop failed:', e);
-      addNotification('Failed to auto-stop capture', 'error');
-    }
+    await fetch(`${BASE_URL}/control/${deviceId}`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ capture_enabled: false })
+    });
+    setIsPosting(false);
+    setStatus('disconnected');
+    setDeviceData(null);
+    setShowInactiveWarning(false);
+    addNotification('Stopped due to inactivity', 'info');
   };
 
-  // === polling for data ===
+  // — fetch logic (polling)
   useEffect(() => {
     if (!deviceId || !isPosting || !autoRefresh) return;
-    setLoading(true);
-
     const fetchData = async () => {
+      setLoading(true);
       setStatus('connecting');
       try {
         const res  = await fetch(`${BASE_URL}/recent_background_api_data/${deviceId}`, { headers: authHeaders() });
-        if (!res.ok) throw new Error(res.statusText);
         const json = await res.json();
-
-        let entry = null;
-        if (json[deviceId]) {
-          entry = json[deviceId];
-        }
-
+        const entry = json[deviceId] || null;
         if (entry) {
           const d = {
             uid: entry.uid || deviceId,
@@ -749,10 +722,8 @@ export default function UserMonitor({ deviceId, viewCode }) {
           }
         } else {
           setStatus('no_device');
-          addNotification('No device data received', 'info');
         }
-      } catch (err) {
-        console.error('Fetch error:', err);
+      } catch {
         setStatus('error');
         addNotification('Connection failed', 'error');
       } finally {
@@ -763,17 +734,15 @@ export default function UserMonitor({ deviceId, viewCode }) {
     fetchData();
     intervalRef.current = setInterval(fetchData, refreshRate);
     return () => clearInterval(intervalRef.current);
-  }, [deviceId, isPosting, refreshRate, autoRefresh, viewCode]);
+  }, [deviceId, isPosting, autoRefresh, refreshRate, viewCode]);
 
-  // === manual refresh ===
+  // — manual refresh
   const handleManualRefresh = useCallback(async () => {
-    if (!deviceId) return;
     setLoading(true);
     try {
       const res  = await fetch(`${BASE_URL}/recent_background_api_data/${deviceId}`, { headers: authHeaders() });
-      if (!res.ok) throw new Error(res.statusText);
       const json = await res.json();
-      let entry = json[deviceId];
+      const entry = json[deviceId] || null;
       if (entry) {
         const d = {
           uid: entry.uid || deviceId,
@@ -784,10 +753,10 @@ export default function UserMonitor({ deviceId, viewCode }) {
         setDeviceData(d);
         setStatus('connected');
         setLastUpdate(new Date());
-        addNotification('Data refreshed successfully', 'success');
+      } else {
+        setStatus('no_device');
       }
-    } catch (err) {
-      console.error('Manual refresh failed:', err);
+    } catch {
       setStatus('error');
       addNotification('Refresh failed', 'error');
     } finally {
@@ -795,75 +764,52 @@ export default function UserMonitor({ deviceId, viewCode }) {
     }
   }, [deviceId, viewCode]);
 
-  // === start/stop capture ===
+  // — start/stop capture
   const togglePosting = async () => {
-    const enable = !isPosting;
     setLoading(true);
     try {
+      const enable = !isPosting;
       const res = await fetch(`${BASE_URL}/control/${deviceId}`, {
         method: 'POST',
         headers: authHeaders(),
         body: JSON.stringify({ capture_enabled: enable })
       });
-      if (!res.ok) throw new Error(res.statusText);
-
+      if (!res.ok) throw new Error();
       setIsPosting(enable);
-      if (enable) {
-        addNotification('Device capture started', 'success');
-        if (!isPageVisible) startInactiveTimer();
-      } else {
-        addNotification('Device capture stopped', 'info');
-        setDeviceData(null);
-        setStatus('disconnected');
-        clearInterval(inactiveTimerRef.current);
-        setInactiveTimer(0);
-        setShowInactiveWarning(false);
-      }
-    } catch (e) {
-      console.error('Toggle error:', e);
-      addNotification(`Failed to ${enable ? 'start' : 'stop'} capture`, 'error');
+    } catch {
+      addNotification('Toggle failed', 'error');
     } finally {
       setLoading(false);
     }
   };
 
-  // === screenshot actions ===
+  // — screenshot actions
   const downloadScreenshot = () => {
     if (!deviceData?.screenshot_png_b64) return;
     const link = document.createElement('a');
     link.href     = `data:image/webp;base64,${deviceData.screenshot_png_b64}`;
-    link.download = `${deviceData.device_name || deviceData.uid}_${new Date().toISOString().slice(0,19)}.webp`;
-    document.body.appendChild(link);
+    link.download = `${deviceData.uid}_${new Date().toISOString()}.webp`;
     link.click();
-    document.body.removeChild(link);
-    addNotification('Screenshot downloaded', 'success');
+    addNotification('Downloaded', 'success');
   };
-
   const shareScreenshot = async () => {
     if (!deviceData?.screenshot_png_b64) return;
-    try {
-      const blob = await (await fetch(`data:image/webp;base64,${deviceData.screenshot_png_b64}`)).blob();
-      const file = new File([blob], `${deviceData.device_name || deviceData.uid}.webp`, { type: 'image/webp' });
-      if (navigator.share && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: 'Device Screenshot' });
-        addNotification('Screenshot shared', 'success');
-      } else {
-        downloadScreenshot();
-      }
-    } catch (e) {
-      console.error('Share failed:', e);
-      downloadScreenshot();
-    }
+    const blob = await (await fetch(`data:image/webp;base64,${deviceData.screenshot_png_b64}`)).blob();
+    const file = new File([blob], `${deviceData.uid}.webp`, { type: 'image/webp' });
+    if (navigator.share && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file] });
+      addNotification('Shared', 'success');
+    } else downloadScreenshot();
   };
 
-  // === notifications ===
-  const addNotification = (message, type = 'info') => {
+  // — notifications helper
+  const addNotification = (msg, type='info') => {
     const id = Date.now();
-    setNotifications(n => [...n, { id, message, type }]);
+    setNotifications(n => [...n, { id, msg, type }]);
     setTimeout(() => setNotifications(n => n.filter(x => x.id !== id)), 4000);
   };
 
-  // === render ===
+  // — render
   return (
     <div className="min-h-screen bg-slate-900 text-white">
       {/* Inactive Warning */}
@@ -892,7 +838,7 @@ export default function UserMonitor({ deviceId, viewCode }) {
             <div className="flex items-center gap-2 text-sm">
               {n.type === 'success' && <CheckCircle className="w-4 h-4" />}
               {n.type === 'error'   && <AlertCircle className="w-4 h-4" />}
-              <span>{n.message}</span>
+              <span>{n.msg}</span>
             </div>
           </div>
         ))}
@@ -974,7 +920,7 @@ export default function UserMonitor({ deviceId, viewCode }) {
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               {status === 'connected' ? <Wifi className="text-green-400" /> :
-               status === 'connecting' ? <Wifi className="text-yellow-400" /> :
+               status === 'connecting' ? <WifiOff className="text-yellow-400" /> :
                <WifiOff className="text-red-400" />}
               <span className="capitalize text-sm text-slate-300">
                 {status === 'connected' ? 'Online' :
@@ -992,7 +938,7 @@ export default function UserMonitor({ deviceId, viewCode }) {
           <button
             onClick={togglePosting}
             disabled={loading}
-            className={`flex items-center gap-2 px-4 py-1 rounded font-semibold transition ${
+            className={`flex items-center gap-2 px-4 py-1 rounded font-semibold ${
               isPosting ? 'bg-red-600 hover:bg-red-500' : 'bg-green-600 hover:bg-green-500'
             } disabled:opacity-50`}
           >
@@ -1056,7 +1002,7 @@ export default function UserMonitor({ deviceId, viewCode }) {
                     <p className="text-sm">No screen capture</p>
                   </div>
                 )}
-              </div>
+              </div> 
 
               {/* Device info */}
               {showDeviceInfo && (
