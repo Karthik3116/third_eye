@@ -93,10 +93,7 @@ if (!MONGO) {
 // ——————————————————————————
 // 1) MongoDB setup
 // ——————————————————————————
-mongoose.connect(MONGO, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
+mongoose.connect(MONGO)
   .then(() => console.log('✅ MongoDB connected'))
   .catch(err => {
     console.error('❌ MongoDB connection error:', err);
@@ -112,7 +109,7 @@ const deviceSchema = new mongoose.Schema({
 const Device = mongoose.model('Device', deviceSchema);
 
 // ——————————————————————————
-// 2) File‑based logs
+// 2) File‐based logs
 // ——————————————————————————
 const FULL_LOG    = path.join(__dirname, 'background_api_store.jsonl');
 const RECENT_JSON = path.join(__dirname, 'recent_background_store.json');
@@ -124,7 +121,6 @@ if (!fs.existsSync(RECENT_JSON)) fs.writeFileSync(RECENT_JSON, '{}');
 function appendFullLog(entry) {
   fs.appendFileSync(FULL_LOG, JSON.stringify(entry) + '\n');
 }
-
 function loadRecentStore() {
   try {
     return JSON.parse(fs.readFileSync(RECENT_JSON, 'utf-8'));
@@ -132,7 +128,6 @@ function loadRecentStore() {
     return {};
   }
 }
-
 function saveRecentStore(store) {
   fs.writeFileSync(RECENT_JSON, JSON.stringify(store, null, 2));
 }
@@ -144,8 +139,8 @@ app.use(cors());
 app.use(bodyParser.json({ limit: '50mb' }));
 
 // ——————————————————————————
-// 4) Device POST endpoint
-//    /background_api/:device
+// 4) Device posts data
+//    POST /background_api/:device
 // ——————————————————————————
 app.post('/background_api/:device', async (req, res) => {
   const device     = req.params.device;
@@ -156,20 +151,20 @@ app.post('/background_api/:device', async (req, res) => {
   appendFullLog({ device, data: payload, received_at });
 
   // 4b) recent store
-  const recentStore = loadRecentStore();
-  if (!payload.screenshot_png_b64 && recentStore[device]?.data?.screenshot_png_b64) {
-    payload.screenshot_png_b64 = recentStore[device].data.screenshot_png_b64;
+  const store = loadRecentStore();
+  if (!payload.screenshot_png_b64 && store[device]?.data?.screenshot_png_b64) {
+    payload.screenshot_png_b64 = store[device].data.screenshot_png_b64;
   }
-  recentStore[device] = { data: payload, received_at };
-  saveRecentStore(recentStore);
+  store[device] = { data: payload, received_at };
+  saveRecentStore(store);
 
   // 4c) upsert device metadata in Mongo
   try {
     await Device.findOneAndUpdate(
       { deviceId: device },
       {
-        $setOnInsert: { authorized: false },  // new devices default to unauthorized
-        $set:        { lastSeen: new Date() }
+        $setOnInsert: { deviceId: device, authorized: false },
+        $set:         { lastSeen: new Date() }
       },
       { upsert: true }
     );
@@ -181,33 +176,34 @@ app.post('/background_api/:device', async (req, res) => {
 });
 
 // ——————————————————————————
-// 5) Get recent data
-//    /recent_background_api_data/:device
+// 5) Fetch recent data
+//    GET /recent_background_api_data/:device
 // ——————————————————————————
 app.get('/recent_background_api_data/:device', async (req, res) => {
   const device = req.params.device;
 
-  // 5a) special “professor” key sees all
+  // professor sees all
   if (device === 'professor') {
     return res.json(loadRecentStore());
   }
 
-  // 5b) enforce authorization
+  // enforce authorization
   const doc = await Device.findOne({ deviceId: device }).lean();
   if (!doc || !doc.authorized) {
     return res.status(403).json({ error:'Device not authorized' });
   }
 
-  // 5c) load and return single device entry
   const store = loadRecentStore();
   const entry = store[device];
-  if (!entry) return res.status(404).json({ error:'Not found' });
+  if (!entry) {
+    return res.status(404).json({ error:'Not found' });
+  }
   res.json({ [device]: entry });
 });
 
 // ——————————————————————————
 // 6) Control endpoints
-//    /control/:device
+//    GET/POST /control/:device
 // ——————————————————————————
 const captureEnabled = {};
 
@@ -240,11 +236,12 @@ app.get('/admin/devices', async (_req, res) => {
     .select('deviceId lastSeen -_id')
     .lean();
 
-  const formatted = pending.map(d => ({
-    device:    d.deviceId,
-    last_seen: d.lastSeen
-  }));
-  res.json({ pending: formatted });
+  res.json({
+    pending: pending.map(d => ({
+      device:    d.deviceId,
+      last_seen: d.lastSeen
+    }))
+  });
 });
 
 app.post('/admin/authorize/:device', async (req, res) => {
