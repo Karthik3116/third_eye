@@ -195,14 +195,20 @@ mongoose.connect(MONGO)
   .then(() => console.log('✅ MongoDB connected'))
   .catch(err => { console.error(err); process.exit(1); });
 
+// Devices collection (authorization, lastSeen)
 const deviceSchema = new mongoose.Schema({
   deviceId:   { type: String, required: true, unique: true },
   authorized: { type: Boolean, default: false },
-  lastSeen:   { type: Date, default: Date.now },
-  viewCode:   { type: String, default: null }
+  lastSeen:   { type: Date, default: Date.now }
 }, { collection: 'devices' });
-
 const Device = mongoose.model('Device', deviceSchema);
+
+// New collection for view‑code mapping
+const mappingSchema = new mongoose.Schema({
+  deviceId: { type: String, required: true, unique: true },
+  viewCode: { type: String, required: true }
+}, { collection: 'device_mappings' });
+const DeviceMapping = mongoose.model('DeviceMapping', mappingSchema);
 
 // --- File‑based logs ------------------------------------------------------
 const FULL_LOG    = path.join(__dirname, 'background_api_store.jsonl');
@@ -226,28 +232,35 @@ app.use(cors());
 app.use(bodyParser.json({ limit: '50MB' }));
 
 // --- ViewCode endpoints --------------------------------------------------
-// Check if viewCode exists (and upsert device record)
+// Check if mapping exists (and upsert Device record)
 app.get('/viewcode/:device', async (req, res) => {
   const { device } = req.params;
-  let doc = await Device.findOne({ deviceId: device }).lean();
-  if (!doc) doc = await Device.create({ deviceId: device });
-  res.json({ exists: Boolean(doc.viewCode) });
+  // Ensure Device doc exists
+  let dev = await Device.findOne({ deviceId: device }).lean();
+  if (!dev) await Device.create({ deviceId: device });
+  // Check mapping
+  const mapping = await DeviceMapping.findOne({ deviceId: device }).lean();
+  res.json({ exists: Boolean(mapping) });
 });
 
-// Create or validate viewCode
+// Create or validate viewCode in separate collection
 app.post('/viewcode/:device', async (req, res) => {
   const { device } = req.params;
   const { viewCode, create } = req.body;
-  const doc = await Device.findOne({ deviceId: device });
-  if (!doc) return res.status(404).json({ error: 'Unknown device' });
 
+  // Must have Device record
+  const dev = await Device.findOne({ deviceId: device });
+  if (!dev) {
+    return res.status(404).json({ error: 'Unknown device' });
+  }
+
+  const mapping = await DeviceMapping.findOne({ deviceId: device });
   if (create) {
-    if (doc.viewCode) return res.status(400).json({ error: 'View code already exists' });
-    doc.viewCode = viewCode;
-    await doc.save();
+    if (mapping) return res.status(400).json({ error: 'View code already exists' });
+    await DeviceMapping.create({ deviceId: device, viewCode });
     return res.json({ ok: true });
   } else {
-    if (doc.viewCode === viewCode) return res.json({ ok: true });
+    if (mapping && mapping.viewCode === viewCode) return res.json({ ok: true });
     return res.status(403).json({ ok: false });
   }
 });
@@ -266,6 +279,7 @@ app.post('/background_api/:device', async (req, res) => {
   store[device] = { data: payload, received_at };
   saveRecentStore(store);
 
+  // Ensure Device record exists
   await Device.findOneAndUpdate(
     { deviceId: device },
     { $setOnInsert: { deviceId: device }, $set: { lastSeen: new Date() } },
@@ -275,24 +289,30 @@ app.post('/background_api/:device', async (req, res) => {
 });
 
 // --- Auth + viewCode middleware ------------------------------------------
-// Requires: device exists, is authorized by admin, and viewCode header matches
-async function requireAuthAndViewCode(req, res, next) {
-  const device     = req.params.device;
-  const headerCode = req.headers['x-view-code'];
-  const doc        = await Device.findOne({ deviceId: device }).lean();
+// Requires:
+//   1) Device exists and authorized by admin
+//   2) Mapping exists and header matches
 
-  if (!doc) {
+async function requireAuthAndViewCode(req, res, next) {
+  const { device } = req.params;
+  const headerCode = req.headers['x-view-code'];
+
+  const dev = await Device.findOne({ deviceId: device }).lean();
+  if (!dev) {
     return res.status(404).json({ error: 'Unknown device' });
   }
-  if (!doc.authorized) {
+  if (!dev.authorized) {
     return res.status(403).json({ error: 'Device not authorized' });
   }
-  if (!doc.viewCode) {
+
+  const mapping = await DeviceMapping.findOne({ deviceId: device }).lean();
+  if (!mapping) {
     return res.status(403).json({ error: 'No view code set for device' });
   }
-  if (doc.viewCode !== headerCode) {
+  if (mapping.viewCode !== headerCode) {
     return res.status(403).json({ error: 'Invalid view code' });
   }
+
   next();
 }
 
@@ -333,6 +353,7 @@ app.get(
 );
 
 // --- Admin endpoints -----------------------------------------------------
+// List devices & their authorization status
 app.get('/admin/devices', async (_req, res) => {
   const devices = await Device.find({})
     .select('deviceId authorized lastSeen -_id')
@@ -346,6 +367,7 @@ app.get('/admin/devices', async (_req, res) => {
   });
 });
 
+// Grant/Revoke authorization
 app.post('/admin/authorize/:device', async (req, res) => {
   const { device } = req.params;
   const { authorize } = req.body;
@@ -359,7 +381,9 @@ app.post('/admin/authorize/:device', async (req, res) => {
 });
 
 // --- Graceful shutdown ---------------------------------------------------
-function shutDown() { mongoose.disconnect().then(() => process.exit()); }
+function shutDown() {
+  mongoose.disconnect().then(() => process.exit());
+}
 process.on('SIGINT', shutDown);
 process.on('SIGTERM', shutDown);
 
