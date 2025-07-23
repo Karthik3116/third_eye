@@ -160,6 +160,8 @@ app.post('/admin/authorize/:device', async (req, res) => {
   res.json({ device, authorized: doc.authorized });
 });
 
+
+
 // 8) Graceful shutdown
 function shutDown() {
   mongoose.disconnect().then(() => process.exit());
