@@ -198,10 +198,10 @@ mongoose.connect(MONGO)
   });
 
 const deviceSchema = new mongoose.Schema({
-  deviceId:    { type: String, required: true, unique: true },
-  authorized:  { type: Boolean, default: false },
-  lastSeen:    { type: Date,    default: Date.now },
-  viewCode:    { type: String,  default: null }
+  deviceId:   { type: String, required: true, unique: true },
+  authorized: { type: Boolean, default: false },
+  lastSeen:   { type: Date, default: Date.now },
+  viewCode:   { type: String, default: null }
 }, { collection: 'devices' });
 
 const Device = mongoose.model('Device', deviceSchema);
@@ -215,12 +215,10 @@ if (!fs.existsSync(RECENT_JSON)) fs.writeFileSync(RECENT_JSON, '{}');
 function appendFullLog(entry) {
   fs.appendFileSync(FULL_LOG, JSON.stringify(entry) + '\n');
 }
-
 function loadRecentStore() {
   try { return JSON.parse(fs.readFileSync(RECENT_JSON, 'utf-8')); }
   catch { return {}; }
 }
-
 function saveRecentStore(store) {
   fs.writeFileSync(RECENT_JSON, JSON.stringify(store, null, 2));
 }
@@ -230,14 +228,11 @@ app.use(cors());
 app.use(bodyParser.json({ limit: '50MB' }));
 
 // --- ViewCode endpoints --------------------------------------------------
-// Check if a viewCode exists
+// Check if viewCode exists (and upsert device record)
 app.get('/viewcode/:device', async (req, res) => {
   const { device } = req.params;
   let doc = await Device.findOne({ deviceId: device }).lean();
-  if (!doc) {
-    // If device isn't even upserted yet, create placeholder
-    doc = await Device.create({ deviceId: device });
-  }
+  if (!doc) doc = await Device.create({ deviceId: device });
   res.json({ exists: Boolean(doc.viewCode) });
 });
 
@@ -245,31 +240,21 @@ app.get('/viewcode/:device', async (req, res) => {
 app.post('/viewcode/:device', async (req, res) => {
   const { device } = req.params;
   const { viewCode, create } = req.body;
-
   const doc = await Device.findOne({ deviceId: device });
-  if (!doc) {
-    return res.status(404).json({ error: 'Unknown device' });
-  }
+  if (!doc) return res.status(404).json({ error: 'Unknown device' });
 
   if (create) {
-    // set viewCode if not yet set
-    if (doc.viewCode) {
-      return res.status(400).json({ error: 'View code already exists' });
-    }
+    if (doc.viewCode) return res.status(400).json({ error: 'View code already exists' });
     doc.viewCode = viewCode;
     await doc.save();
     return res.json({ ok: true });
   } else {
-    // validate
-    if (doc.viewCode === viewCode) {
-      return res.json({ ok: true });
-    } else {
-      return res.status(403).json({ ok: false });
-    }
+    if (doc.viewCode === viewCode) return res.json({ ok: true });
+    return res.status(403).json({ ok: false });
   }
 });
 
-// --- Device data ingestion -----------------------------------------------
+// --- Device posts data ---------------------------------------------------
 app.post('/background_api/:device', async (req, res) => {
   const device     = req.params.device;
   const payload    = req.body;
@@ -283,52 +268,41 @@ app.post('/background_api/:device', async (req, res) => {
   store[device] = { data: payload, received_at };
   saveRecentStore(store);
 
-  // ensure device record exists
   await Device.findOneAndUpdate(
     { deviceId: device },
-    {
-      $setOnInsert: { deviceId: device, authorized: false },
-      $set:         { lastSeen: new Date() }
-    },
+    { $setOnInsert: { deviceId: device, authorized: false }, $set: { lastSeen: new Date() } },
     { upsert: true }
-  ).catch(console.error);
-
+  );
   res.status(201).json({ status:'saved', device, received_at });
 });
 
-// Helper: validate viewCode header
+// --- Auth & viewCode middleware ------------------------------------------
 async function requireAuthAndViewCode(req, res, next) {
   const device = req.params.device;
   const headerCode = req.headers['x-view-code'];
   const doc = await Device.findOne({ deviceId: device }).lean();
-
-  if (!doc || !doc.authorized) {
-    return res.status(403).json({ error: 'Device not authorized' });
-  }
-  if (!doc.viewCode || doc.viewCode !== headerCode) {
-    return res.status(403).json({ error: 'Invalid view code' });
-  }
+  if (!doc || !doc.authorized) return res.status(403).json({ error: 'Device not authorized' });
+  if (!doc.viewCode || doc.viewCode !== headerCode) return res.status(403).json({ error: 'Invalid view code' });
   next();
 }
 
 // --- Fetch recent data ---------------------------------------------------
 app.get('/recent_background_api_data/:device', requireAuthAndViewCode, async (req, res) => {
   const device = req.params.device;
-  const store = loadRecentStore();
-  const entry = store[device];
-  if (!entry) return res.status(404).json({ error:'Not found' });
+  const store  = loadRecentStore();
+  const entry  = store[device] || null;
+  // always return 200 with {} or with data
+  if (!entry) return res.json({});
   res.json({ [device]: entry });
 });
 
 // --- Control endpoints ---------------------------------------------------
 const captureEnabled = {};
-
 app.post('/control/:device', requireAuthAndViewCode, async (req, res) => {
   const device = req.params.device;
   captureEnabled[device] = !!req.body.capture_enabled;
   res.json({ device, capture_enabled: captureEnabled[device] });
 });
-
 app.get('/control/:device', requireAuthAndViewCode, async (req, res) => {
   const device = req.params.device;
   res.json({ device, capture_enabled: !!captureEnabled[device] });
@@ -339,35 +313,27 @@ app.get('/admin/devices', async (_req, res) => {
   const devices = await Device.find({})
     .select('deviceId authorized lastSeen -_id')
     .lean();
-
-  const mapped = devices.map(d => ({
-    device: d.deviceId,
-    authorized: d.authorized,
-    last_seen: d.lastSeen,
-  }));
-
-  res.json({ devices: mapped });
+  res.json({
+    devices: devices.map(d => ({
+      device:      d.deviceId,
+      authorized:  d.authorized,
+      last_seen:   d.lastSeen
+    }))
+  });
 });
-
 app.post('/admin/authorize/:device', async (req, res) => {
-  const device     = req.params.device;
+  const { device } = req.params;
   const { authorize } = req.body;
-  const doc        = await Device.findOne({ deviceId: device });
-  if (!doc) {
-    return res.status(404).json({ error:'Unknown device' });
-  }
+  const doc = await Device.findOne({ deviceId: device });
+  if (!doc) return res.status(404).json({ error:'Unknown device' });
   doc.authorized = Boolean(authorize);
   await doc.save();
   res.json({ device, authorized: doc.authorized });
 });
 
-// --- Shutdown ------------------------------------------------------------
-function shutDown() {
-  mongoose.disconnect().then(() => process.exit());
-}
+// --- Graceful shutdown ---------------------------------------------------
+function shutDown() { mongoose.disconnect().then(() => process.exit()); }
 process.on('SIGINT', shutDown);
 process.on('SIGTERM', shutDown);
 
-app.listen(PORT, () => {
-  console.log(`🚀 Listening on http://localhost:${PORT}`);
-});
+app.listen(PORT, () => console.log(`🚀 Listening on http://localhost:${PORT}`));
