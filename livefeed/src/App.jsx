@@ -111,8 +111,8 @@ export default function App() {
     setIsLoading(true);
     setError('');
 
-    if (key === '9063492573') {
-      setAccessKey('9063492573');
+    if (key === 'admin') {
+      setAccessKey('admin');
       setIsLoading(false);
       return;
     }
@@ -246,7 +246,7 @@ export default function App() {
     <>
       <nav className="p-4 bg-slate-800 text-white flex items-center">
         <Link to="/" className="mr-4 hover:underline">Monitor</Link>
-        {accessKey === '9063492573' && (
+        {accessKey === 'admin' && (
           <Link to="/admin" className="hover:underline">Admin</Link>
         )}
       </nav>
@@ -256,7 +256,7 @@ export default function App() {
         <Route
           index
           element={
-            accessKey === '9063492573'
+            accessKey === 'admin'
               ? <Navigate to="/admin" replace />
               : <Navigate to="/monitor" replace />
           }
