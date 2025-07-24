@@ -269,12 +269,10 @@ mongoose.connect(MONGO)
   });
 
 const deviceSchema = new mongoose.Schema({
-  deviceId:            { type: String, required: true, unique: true },
-  authorized:          { type: Boolean, default: false },
-  subscription_expires:{ type: Date,    default: null },
-  lastSeen:            { type: Date,    default: Date.now }
+  deviceId:   { type: String, required: true, unique: true },
+  authorized: { type: Boolean, default: false },
+  lastSeen:   { type: Date, default: Date.now }
 }, { collection: 'devices' });
-
 
 const Device = mongoose.model('Device', deviceSchema);
 
@@ -286,7 +284,43 @@ const deviceMappingSchema = new mongoose.Schema({
 const DeviceMapping = mongoose.model('DeviceMapping', deviceMappingSchema);
 
 
+
+const subscriptionSchema = new mongoose.Schema({
+  deviceId:  { type: String, required: true, unique: true, index: true },
+  expiresAt: { type: Date,   required: true }
+}, { collection: 'subscriptions' });
+const Subscription = mongoose.model('Subscription', subscriptionSchema);
+
+
+
+
 const subscriptionTimeouts = {};
+
+// Helper: schedule a revoke at `expiresAt`
+function scheduleRevoke(deviceId, expiresAt) {
+  const ms = expiresAt.getTime() - Date.now();
+  if (ms <= 0) {
+    // already expired
+    Subscription.deleteOne({ deviceId }).exec();
+    return;
+  }
+  // clear existing
+  if (subscriptionTimeouts[deviceId]) {
+    clearTimeout(subscriptionTimeouts[deviceId]);
+  }
+  subscriptionTimeouts[deviceId] = setTimeout(async () => {
+    await Subscription.deleteOne({ deviceId });
+    delete subscriptionTimeouts[deviceId];
+    console.log(`🔒 Subscription expired for ${deviceId}`);
+  }, ms);
+}
+
+// On startup: schedule for all unexpired subscriptions
+(async () => {
+  const now = new Date();
+  const subs = await Subscription.find({ expiresAt: { $gt: now } }).lean();
+  subs.forEach(s => scheduleRevoke(s.deviceId, s.expiresAt));
+})();
 
 
 // 2) File‑based logs
@@ -354,6 +388,12 @@ app.get('/recent_background_api_data/:device', async (req, res) => {
     return res.json(loadRecentStore());
   }
 
+  const sub = await Subscription.findOne({ deviceId: device }).lean();
+  if (!sub || sub.expiresAt <= new Date()) {
+    return res.status(403).json({ error: 'Device not authorized or subscription expired' });
+  }
+
+
   const doc = await Device.findOne({ deviceId: device }).lean();
   if (!doc || !doc.authorized) {
     return res.status(403).json({ error:'Device not authorized' });
@@ -374,18 +414,24 @@ app.post('/control/:device', async (req, res) => {
   if (!doc || !doc.authorized) {
     return res.status(403).json({ error:'Device not authorized' });
   }
+
+  
+  const sub = await Subscription.findOne({ deviceId: device }).lean();
+  if (!sub || sub.expiresAt <= new Date()) {
+    return res.status(403).json({ error: 'Device not authorized' });
+  }
+
   captureEnabled[device] = !!req.body.capture_enabled;
   res.json({ device, capture_enabled: captureEnabled[device] });
 });
 
 app.get('/control/:device', async (req, res) => {
   const device = req.params.device;
-  const doc    = await Device.findOne({ deviceId: device }).lean();
-  if (!doc || !doc.authorized) {
-    return res.json({ device, capture_enabled: false, authorized: false });
-  }
-  res.json({ device, capture_enabled: !!captureEnabled[device], authorized: true });
+  const sub = await Subscription.findOne({ deviceId: device }).lean();
+  const authorized = !!sub && sub.expiresAt > new Date();
+  res.json({ device, capture_enabled: !!captureEnabled[device], authorized });
 });
+
 
 
 // Endpoint to check if a device has a view code (unchanged)
@@ -442,17 +488,32 @@ app.post('/api/auth/login', async (req, res) => {
 
 // 7) Admin endpoints
 app.get('/admin/devices', async (_req, res) => {
-  const docs = await Device.find({})
-    .select('deviceId authorized subscription_expires lastSeen -_id')
+app.get('/admin/devices', async (_req, res) => {
+  // delete any expired subscriptions on‐the‐fly
+  await Subscription.deleteMany({ expiresAt: { $lte: new Date() } });
+
+  const devices = await Device.find({})
+    .select('deviceId lastSeen -_id')
     .lean();
 
-  const devices = docs.map(d => ({
+  // fetch subscriptions for all deviceIds
+  const subs = await Subscription.find({
+    deviceId: { $in: devices.map(d => d.deviceId) }
+  }).lean();
+
+  const subMap = subs.reduce((m, s) => {
+    m[s.deviceId] = s.expiresAt;
+    return m;
+  }, {});
+
+  const out = devices.map(d => ({
     device:                d.deviceId,
-    authorized:            d.authorized,
-    subscription_expires:  d.subscription_expires,
     last_seen:             d.lastSeen,
+    authorized:            !!subMap[d.deviceId],
+    subscription_expires:  subMap[d.deviceId] || null
   }));
-  res.json({ devices });
+
+  res.json({ devices: out });
 });
 
 
@@ -474,50 +535,42 @@ app.post('/admin/authorize/:device', async (req, res) => {
   const deviceId = req.params.device;
   const { authorize, hours = 0, minutes = 0 } = req.body;
 
-  const doc = await Device.findOne({ deviceId });
-  if (!doc) {
-    return res.status(404).json({ error: 'Unknown device' });
-  }
+  // ensure device exists
+  await Device.findOneAndUpdate(
+    { deviceId },
+    { $setOnInsert: { deviceId }, $set: {} },
+    { upsert: true }
+  );
 
-  // Clear any existing timer
+  // clear any existing timeout
   if (subscriptionTimeouts[deviceId]) {
     clearTimeout(subscriptionTimeouts[deviceId]);
     delete subscriptionTimeouts[deviceId];
   }
 
   if (authorize) {
-    // Calculate expiration
+    // schedule new subscription
     const ms = (hours * 60 + minutes) * 60 * 1000;
     const expiresAt = new Date(Date.now() + ms);
-
-    // Update in DB
-    doc.authorized = true;
-    doc.subscription_expires = expiresAt;
-    await doc.save();
-
-    // Schedule auto‑revoke
-    subscriptionTimeouts[deviceId] = setTimeout(async () => {
-      await Device.updateOne(
-        { deviceId },
-        { $set: { authorized: false, subscription_expires: null } }
-      );
-      delete subscriptionTimeouts[deviceId];
-      console.log(`🔒 Subscription expired for ${deviceId}`);
-    }, ms);
+    await Subscription.findOneAndUpdate(
+      { deviceId },
+      { expiresAt },
+      { upsert: true }
+    );
+    scheduleRevoke(deviceId, expiresAt);
 
     return res.json({
       device: deviceId,
-      authorized: true,
+      authorized:       true,
       subscription_expires: expiresAt
     });
   } else {
-    // Manual revoke
-    doc.authorized = false;
-    doc.subscription_expires = null;
-    await doc.save();
+    // revoke immediately
+    await Subscription.deleteOne({ deviceId });
     return res.json({ device: deviceId, authorized: false });
   }
 });
+
 
 
 function shutDown() {
