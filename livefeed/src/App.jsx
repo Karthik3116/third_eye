@@ -111,8 +111,8 @@ export default function App() {
     setIsLoading(true);
     setError('');
 
-    if (key === 'admin') {
-      setAccessKey('admin');
+    if (key === '9063492573') {
+      setAccessKey('9063492573');
       setIsLoading(false);
       return;
     }
@@ -198,7 +198,7 @@ export default function App() {
                 value={deviceIdInput}
                 onChange={e => setDeviceIdInput(e.target.value)}
                 onKeyPress={e => e.key === 'Enter' && handleDeviceCheck()}
-                placeholder="Enter device ID (or 'admin')"
+                placeholder="Enter device ID "
                 className="w-full px-4 py-3 mb-4 rounded-xl bg-slate-700/50 border border-slate-600 text-white"
               />
               <button
@@ -246,7 +246,7 @@ export default function App() {
     <>
       <nav className="p-4 bg-slate-800 text-white flex items-center">
         <Link to="/" className="mr-4 hover:underline">Monitor</Link>
-        {accessKey === 'admin' && (
+        {accessKey === '9063492573' && (
           <Link to="/admin" className="hover:underline">Admin</Link>
         )}
       </nav>
@@ -256,7 +256,7 @@ export default function App() {
         <Route
           index
           element={
-            accessKey === 'admin'
+            accessKey === '9063492573'
               ? <Navigate to="/admin" replace />
               : <Navigate to="/monitor" replace />
           }
