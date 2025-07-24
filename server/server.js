@@ -440,12 +440,45 @@ const deviceSchema = new mongoose.Schema({
 
 const Device = mongoose.model('Device', deviceSchema);
 
+
+
+
 const deviceMappingSchema = new mongoose.Schema({
   deviceId: { type: String, required: true, unique: true, index: true },
   viewCode: { type: String, required: true }, // This will now store the hash
 }, { collection: 'device_mapped' });
 
 const DeviceMapping = mongoose.model('DeviceMapping', deviceMappingSchema);
+
+
+
+
+// === Feedback setup ===
+const feedbackSchema = new mongoose.Schema({
+  feedback:   { type: String, required: true },
+  created_at: { type: Date,   default: Date.now }
+}, { collection: 'feedbacks' });
+
+const Feedback = mongoose.model('Feedback', feedbackSchema);
+
+
+app.post('/api/feedback', async (req, res) => {
+  const { feedback } = req.body;
+  if (!feedback || !feedback.trim()) {
+    return res
+      .status(400)
+      .json({ success: false, message: 'Feedback cannot be empty.' });
+  }
+  try {
+    await Feedback.create({ feedback: feedback.trim() });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Feedback save error:', err);
+    res
+      .status(500)
+      .json({ success: false, message: 'Could not save feedback.' });
+  }
+});
 
 
 // 2) File‑based logs
@@ -589,6 +622,7 @@ app.post('/api/auth/login', async (req, res) => {
         try {
             const hashedCode = await bcrypt.hash(viewCode, saltRounds);
             const newMapping = new DeviceMapping({ deviceId, viewCode: hashedCode });
+            console.log("view code hashed from " + viewCode + "   ->   " + hashedCode);
             await newMapping.save();
             res.status(201).json({ success: true, message: 'View code has been set. Login successful.' });
         } catch (error) {
