@@ -487,7 +487,7 @@ app.post('/api/auth/login', async (req, res) => {
 
 
 // 7) Admin endpoints
-app.get('/admin/devices', async (_req, res) => {
+
 app.get('/admin/devices', async (_req, res) => {
   // delete any expired subscriptions on‐the‐fly
   await Subscription.deleteMany({ expiresAt: { $lte: new Date() } });
