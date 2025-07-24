@@ -197,212 +197,11 @@
 //   );
 // }
 
-// import { useState } from 'react';
-// import { Routes, Route, Link, Navigate, useLocation } from 'react-router-dom';
-// import UserMonitor from './pages/UserMonitor';
-// import AdminPage from './pages/AdminPage';
-// import FeedbackForm from './components/FeedbackForm';
-
-// import { Smartphone, Lock, ShieldCheck, ArrowRight } from 'lucide-react';
-
-// const BASE_URL = 'https://third-eye-txe8.onrender.com';
-// const ADMIN_KEY = '9063492573';
-
-// // Higher-order component for protected routes
-// function ProtectedRoute({ isAllowed, redirectPath = '/', children }) {
-//   const location = useLocation();
-//   if (!isAllowed) {
-//     return <Navigate to={redirectPath} replace state={{ from: location }} />;
-//   }
-//   return children;
-// }
-
-// export default function App() {
-//   const [accessKey, setAccessKey] = useState(null);
-//   const [deviceIdInput, setDeviceIdInput] = useState('');
-//   const [viewCodeInput, setViewCodeInput] = useState('');
-//   const [error, setError] = useState('');
-//   const [isLoading, setIsLoading] = useState(false);
-//   const [loginStep, setLoginStep] = useState('enter_device');
-
-//   // Step 1: Check device status
-//   const handleDeviceCheck = async () => {
-//     const key = deviceIdInput.trim();
-//     if (!key) return;
-//     setIsLoading(true);
-//     setError('');
-
-//     try {
-//       // Admin shortcut
-//       if (key === ADMIN_KEY) {
-//         setAccessKey(key);
-//         return;
-//       }
-
-//       const res = await fetch(`${BASE_URL}/api/auth/status/${key}`);
-//       if (!res.ok) {
-//         const { error: errMsg } = await res.json();
-//         throw new Error(errMsg || 'Device not authorized');
-//       }
-
-//       const data = await res.json();
-//       setLoginStep(data.isMapped ? 'enter_code' : 'set_code');
-//     } catch (e) {
-//       setError(e.message);
-//     } finally {
-//       setIsLoading(false);
-//     }
-//   };
-
-//   // Step 2: Login or set code
-//   const handleLogin = async () => {
-//     const deviceId = deviceIdInput.trim();
-//     const viewCode = viewCodeInput.trim();
-//     if (!deviceId || !viewCode) return;
-
-//     setIsLoading(true);
-//     setError('');
-
-//     try {
-//       const res = await fetch(`${BASE_URL}/api/auth/login`, {
-//         method: 'POST',
-//         headers: { 'Content-Type': 'application/json' },
-//         body: JSON.stringify({ deviceId, viewCode }),
-//       });
-
-//       const data = await res.json();
-//       if (!res.ok || !data.success) {
-//         throw new Error(data.message || 'Login failed');
-//       }
-
-//       setAccessKey(deviceId);
-//     } catch (e) {
-//       setError(e.message);
-//     } finally {
-//       setIsLoading(false);
-//     }
-//   };
-
-//   const resetLogin = () => {
-//     setLoginStep('enter_device');
-//     setDeviceIdInput('');
-//     setViewCodeInput('');
-//     setError('');
-//   };
-
-//   // Render login flow
-//   if (!accessKey) {
-//     const isCheckingDevice = loginStep === 'enter_device';
-//     const title = isCheckingDevice ? 'Device Monitor'
-//                   : loginStep === 'enter_code' ? 'Enter View Code'
-//                   : 'Set View Code';
-//     const description = isCheckingDevice
-//       ? "Enter your device's ID to connect"
-//       : loginStep === 'enter_code'
-//       ? `For device: ${deviceIdInput}`
-//       : `Create a secure view code for ${deviceIdInput}`;
-
-//     return (
-      
-//       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 flex items-center justify-center p-4">
-//         <div className="bg-slate-800/50 backdrop-blur-lg p-6 rounded-2xl shadow-2xl w-full max-w-sm border border-slate-700">
-//           <div className="text-center mb-6">
-//             <div className="w-16 h-16 text-blue-400 mx-auto mb-4 bg-slate-700/50 rounded-full flex items-center justify-center">
-//               {isCheckingDevice ? <Smartphone size={32} /> : <Lock size={32} />}
-//             </div>
-//             <h1 className="text-2xl font-bold text-white mb-2">{title}</h1>
-//             <p className="text-slate-400 text-sm">{description}</p>
-//           </div>
-
-//           {error && <p className="text-red-400 text-center text-sm mb-4">{error}</p>}
-
-//           {loginStep === 'enter_device' && (
-//             <>
-//               <input
-//                 value={deviceIdInput}
-//                 onChange={e => setDeviceIdInput(e.target.value)}
-//                 onKeyDown={e => e.key === 'Enter' && handleDeviceCheck()}
-//                 placeholder="Enter device ID"
-//                 className="w-full px-4 py-3 mb-4 rounded-xl bg-slate-700/50 border border-slate-600 text-white"
-//               />
-//               <button
-//                 onClick={handleDeviceCheck}
-//                 disabled={!deviceIdInput.trim() || isLoading}
-//                 className="w-full py-3 bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl text-white font-semibold disabled:opacity-50 flex items-center justify-center"
-//               >
-//                 {isLoading ? 'Checking...' : 'Continue'}
-//                 {!isLoading && <ArrowRight className="w-5 h-5 ml-2" />}
-//               </button>
-//             </>
-//           )}
-
-//           {(loginStep === 'enter_code' || loginStep === 'set_code') && (
-//             <>
-//               <input
-//                 type="password"
-//                 value={viewCodeInput}
-//                 onChange={e => setViewCodeInput(e.target.value)}
-//                 onKeyDown={e => e.key === 'Enter' && handleLogin()}
-//                 placeholder={loginStep === 'enter_code' ? 'Enter view code' : 'Set a new view code'}
-//                 className="w-full px-4 py-3 mb-4 rounded-xl bg-slate-700/50 border border-slate-600 text-white"
-//               />
-//               <button
-//                 onClick={handleLogin}
-//                 disabled={!viewCodeInput.trim() || isLoading}
-//                 className="w-full py-3 bg-gradient-to-r from-green-600 to-teal-600 rounded-xl text-white font-semibold disabled:opacity-50 flex items-center justify-center"
-//               >
-//                 {isLoading ? 'Connecting...' : 'Connect Securely'}
-//                 {!isLoading && <ShieldCheck className="w-5 h-5 ml-2" />}
-//               </button>
-//               <button
-//                 onClick={resetLogin}
-//                 className="w-full text-center text-slate-400 text-xs mt-4 hover:underline"
-//               >
-//                 Use a different device ID
-//               </button>
-//             </>
-//           )}
-//         </div>
-//       </div>
-//     );
-//   }
-
-//   // Main App with nav and protected routes
-//   return (
-//     <>
-//       <FeedbackForm />
-//       <nav className="p-4 bg-slate-800 text-white flex gap-4">
-//         <Link to="/monitor" className="hover:underline">Monitor</Link>
-//         <Link to="/admin" className={accessKey === ADMIN_KEY ? 'hover:underline' : 'opacity-50 cursor-not-allowed'}>
-//           Admin
-//         </Link>
-//       </nav>
-
-//       <Routes>
-//         <Route path="/" element={<Navigate to="/monitor" replace />} />
-//         <Route path="/monitor" element={<UserMonitor accessKey={accessKey} />} />
-//         <Route
-//           path="/admin"
-//           element={
-//             <ProtectedRoute isAllowed={accessKey === ADMIN_KEY} redirectPath="/monitor">
-//               <AdminPage />
-//             </ProtectedRoute>
-//           }
-//         />
-//         <Route path="*" element={<Navigate to="/" replace />} />
-//       </Routes>
-//     </>
-//   );
-// }
-
-
-
-// src/App.jsx
 import { useState } from 'react';
 import { Routes, Route, Link, Navigate, useLocation } from 'react-router-dom';
 import UserMonitor from './pages/UserMonitor';
 import AdminPage from './pages/AdminPage';
-import FeedbackForm from './components/FeedbackForm';
+
 import { Smartphone, Lock, ShieldCheck, ArrowRight } from 'lucide-react';
 
 const BASE_URL = 'https://third-eye-txe8.onrender.com';
@@ -424,7 +223,6 @@ export default function App() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [loginStep, setLoginStep] = useState('enter_device');
-  const [showFeedback, setShowFeedback] = useState(false);
 
   // Step 1: Check device status
   const handleDeviceCheck = async () => {
@@ -434,15 +232,18 @@ export default function App() {
     setError('');
 
     try {
+      // Admin shortcut
       if (key === ADMIN_KEY) {
         setAccessKey(key);
         return;
       }
+
       const res = await fetch(`${BASE_URL}/api/auth/status/${key}`);
       if (!res.ok) {
         const { error: errMsg } = await res.json();
         throw new Error(errMsg || 'Device not authorized');
       }
+
       const data = await res.json();
       setLoginStep(data.isMapped ? 'enter_code' : 'set_code');
     } catch (e) {
@@ -467,10 +268,12 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ deviceId, viewCode }),
       });
+
       const data = await res.json();
       if (!res.ok || !data.success) {
         throw new Error(data.message || 'Login failed');
       }
+
       setAccessKey(deviceId);
     } catch (e) {
       setError(e.message);
@@ -490,13 +293,13 @@ export default function App() {
   if (!accessKey) {
     const isCheckingDevice = loginStep === 'enter_device';
     const title = isCheckingDevice ? 'Device Monitor'
-      : loginStep === 'enter_code' ? 'Enter View Code'
-      : 'Set View Code';
+                  : loginStep === 'enter_code' ? 'Enter View Code'
+                  : 'Set View Code';
     const description = isCheckingDevice
       ? "Enter your device's ID to connect"
       : loginStep === 'enter_code'
-        ? `For device: ${deviceIdInput}`
-        : `Create a secure view code for ${deviceIdInput}`;
+      ? `For device: ${deviceIdInput}`
+      : `Create a secure view code for ${deviceIdInput}`;
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 flex items-center justify-center p-4">
@@ -512,7 +315,7 @@ export default function App() {
           {error && <p className="text-red-400 text-center text-sm mb-4">{error}</p>}
 
           {loginStep === 'enter_device' && (
-            <>              
+            <>
               <input
                 value={deviceIdInput}
                 onChange={e => setDeviceIdInput(e.target.value)}
@@ -562,34 +365,16 @@ export default function App() {
     );
   }
 
-  // Main App with feedback button, nav, and routes
+  // Main App with nav and protected routes
   return (
     <>
-      {/* 1) Mount FeedbackForm only when showFeedback is true */}
-      {showFeedback && (
-        <FeedbackForm onClose={() => setShowFeedback(false)} />
-      )}
-
-      {/* 2) Floating Feedback button */}
-      <button
-        onClick={() => setShowFeedback(true)}
-        className="fixed top-4 right-4 z-50 bg-blue-600 text-white px-4 py-2 rounded-full shadow-lg hover:bg-blue-700 transition"
-      >
-        Feedback
-      </button>
-
-      {/* 3) Navigation */}
       <nav className="p-4 bg-slate-800 text-white flex gap-4">
         <Link to="/monitor" className="hover:underline">Monitor</Link>
-        <Link
-          to="/admin"
-          className={accessKey === ADMIN_KEY ? 'hover:underline' : 'opacity-50 cursor-not-allowed'}
-        >
+        <Link to="/admin" className={accessKey === ADMIN_KEY ? 'hover:underline' : 'opacity-50 cursor-not-allowed'}>
           Admin
         </Link>
       </nav>
 
-      {/* 4) Routes */}
       <Routes>
         <Route path="/" element={<Navigate to="/monitor" replace />} />
         <Route path="/monitor" element={<UserMonitor accessKey={accessKey} />} />
